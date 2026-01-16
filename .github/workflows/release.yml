@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - '.editorconfig'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      
+      - name: Get version
+        id: version
+        shell: pwsh
+        run: |
+          # Get the number of commits for versioning
+          $commitCount = git rev-list --count HEAD
+          $shortSha = git rev-parse --short HEAD
+          $date = Get-Date -Format "yyyy.MM.dd"
+          
+          # Version format: v{date}.{commit_count}
+          $version = "v$date.$commitCount"
+          $tagVersion = "$date.$commitCount"
+          
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "TAG_VERSION=$tagVersion" >> $env:GITHUB_OUTPUT
+          echo "SHORT_SHA=$shortSha" >> $env:GITHUB_OUTPUT
+          
+          Write-Host "Version: $version"
+      
+      - name: Restore dependencies
+        run: dotnet restore
+      
+      - name: Build Host (Windows x64)
+        run: |
+          dotnet publish src/Sidecar.Host/Sidecar.Host.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -o ./publish/host-win-x64
+      
+      - name: Build Client (Windows x64)
+        run: |
+          dotnet publish src/Sidecar.Client/Sidecar.Client.csproj `
+            -c Release `
+            -f net10.0-windows10.0.19041.0 `
+            -r win-x64 `
+            -o ./publish/client-win-x64
+      
+      - name: Create Host archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path ./publish/host-win-x64/* -DestinationPath ./Sidecar.Host-win-x64.zip
+      
+      - name: Create Client archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path ./publish/client-win-x64/* -DestinationPath ./Sidecar.Client-win-x64.zip
+      
+      - name: Check if tag exists
+        id: check_tag
+        shell: pwsh
+        run: |
+          $tagExists = git tag -l "${{ steps.version.outputs.VERSION }}"
+          if ($tagExists) {
+            echo "TAG_EXISTS=true" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "TAG_EXISTS=false" >> $env:GITHUB_OUTPUT
+          }
+      
+      - name: Create Release
+        if: steps.check_tag.outputs.TAG_EXISTS == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: Release ${{ steps.version.outputs.VERSION }}
+          body: |
+            ## Sidecar Release ${{ steps.version.outputs.VERSION }}
+            
+            ### 📦 Downloads
+            
+            | Platform | File |
+            |----------|------|
+            | Windows Host (配信側) | `Sidecar.Host-win-x64.zip` |
+            | Windows Client (視聴側) | `Sidecar.Client-win-x64.zip` |
+            
+            ### 🔧 Changes
+            
+            Commit: ${{ steps.version.outputs.SHORT_SHA }}
+            
+            ---
+            
+            **Host (配信側)**: Windows 10/11 で動作します。キャプチャデバイスが必要です。
+            
+            **Client (視聴側)**: Windows 10/11 で動作します。ホストに接続してストリーミングを視聴できます。
+          files: |
+            Sidecar.Host-win-x64.zip
+            Sidecar.Client-win-x64.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
