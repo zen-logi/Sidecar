@@ -27,8 +27,8 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       
-      - name: Install MAUI workload
-        run: dotnet workload install maui-windows
+      - name: Install MAUI workloads
+        run: dotnet workload install maui-windows android ios maccatalyst
       
       - name: Get version
         id: version
