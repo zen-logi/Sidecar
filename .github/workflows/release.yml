@@ -118,7 +118,10 @@ jobs:
       - name: Install MAUI workload
         run: dotnet workload install maui-android
       
-      - name: Restore
+      - name: Restore Shared
+        run: dotnet restore src/Sidecar.Shared/Sidecar.Shared.csproj
+      
+      - name: Restore Client
         run: |
           dotnet restore src/Sidecar.Client/Sidecar.Client.csproj `
             -p:TargetFramework=net10.0-android
@@ -166,6 +169,9 @@ jobs:
       
       - name: Install MAUI workloads
         run: dotnet workload install maui-maccatalyst maui-ios
+      
+      - name: Restore Shared
+        run: dotnet restore src/Sidecar.Shared/Sidecar.Shared.csproj
       
       # macOS Catalyst ビルド
       - name: Restore (macOS)
