@@ -131,7 +131,6 @@ jobs:
           dotnet publish src/Sidecar.Client/Sidecar.Client.csproj `
             -c Release `
             -f net10.0-android `
-            --no-restore `
             -o ./publish/android
       
       - name: Find and rename APK
@@ -184,7 +183,6 @@ jobs:
           dotnet publish src/Sidecar.Client/Sidecar.Client.csproj \
             -c Release \
             -f net10.0-maccatalyst \
-            --no-restore \
             -o ./publish/macos
       
       - name: Create macOS archive
@@ -203,7 +201,6 @@ jobs:
           dotnet build src/Sidecar.Client/Sidecar.Client.csproj \
             -c Release \
             -f net10.0-ios \
-            --no-restore \
             -p:RuntimeIdentifier=iossimulator-arm64 \
             -p:_BundlerDebug=false
         continue-on-error: true
