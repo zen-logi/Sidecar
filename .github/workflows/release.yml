@@ -13,42 +13,14 @@ permissions:
   contents: write
 
 jobs:
-  # =============================================================================
-  # バージョン情報の取得
-  # =============================================================================
-  version:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.VERSION }}
-      short_sha: ${{ steps.version.outputs.SHORT_SHA }}
+  build-and-release:
+    runs-on: windows-latest
+    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
-      - name: Get version
-        id: version
-        run: |
-          COMMIT_COUNT=$(git rev-list --count HEAD)
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          DATE=$(date +"%Y.%m.%d")
-          VERSION="v${DATE}.${COMMIT_COUNT}"
-          
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
-
-  # =============================================================================
-  # Windows ビルド (Host + Client)
-  # =============================================================================
-  build-windows:
-    runs-on: windows-latest
-    needs: version
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
       
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -58,13 +30,21 @@ jobs:
       - name: Install MAUI workload
         run: dotnet workload install maui-windows
       
-      - name: Restore Host
-        run: dotnet restore src/Sidecar.Host/Sidecar.Host.csproj
-      
-      - name: Restore Client
+      - name: Get version
+        id: version
+        shell: pwsh
         run: |
-          dotnet restore src/Sidecar.Client/Sidecar.Client.csproj `
-            -p:TargetFramework=net10.0-windows10.0.19041.0
+          $commitCount = git rev-list --count HEAD
+          $shortSha = git rev-parse --short HEAD
+          $date = Get-Date -Format "yyyy.MM.dd"
+          $version = "v$date.$commitCount"
+          
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "SHORT_SHA=$shortSha" >> $env:GITHUB_OUTPUT
+          Write-Host "Version: $version"
+      
+      - name: Restore
+        run: dotnet restore
       
       - name: Build Host
         run: |
@@ -81,8 +61,7 @@ jobs:
           dotnet publish src/Sidecar.Client/Sidecar.Client.csproj `
             -c Release `
             -f net10.0-windows10.0.19041.0 `
-            -r win-x64 `
-            --no-restore `
+            -p:TargetFrameworks=net10.0-windows10.0.19041.0 `
             -o ./publish/client-win-x64
       
       - name: Create archives
@@ -91,167 +70,25 @@ jobs:
           Compress-Archive -Path ./publish/host-win-x64/* -DestinationPath ./Sidecar.Host-win-x64.zip
           Compress-Archive -Path ./publish/client-win-x64/* -DestinationPath ./Sidecar.Client-win-x64.zip
       
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-builds
-          path: |
-            Sidecar.Host-win-x64.zip
-            Sidecar.Client-win-x64.zip
-
-  # =============================================================================
-  # Android ビルド
-  # =============================================================================
-  build-android:
-    runs-on: windows-latest
-    needs: version
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-      
-      - name: Install MAUI workload
-        run: dotnet workload install maui-android
-      
-      - name: Restore Shared
-        run: dotnet restore src/Sidecar.Shared/Sidecar.Shared.csproj
-      
-      - name: Restore Client
-        run: |
-          dotnet restore src/Sidecar.Client/Sidecar.Client.csproj `
-            -p:TargetFramework=net10.0-android
-      
-      - name: Build APK
-        run: |
-          dotnet publish src/Sidecar.Client/Sidecar.Client.csproj `
-            -c Release `
-            -f net10.0-android `
-            -p:TargetFrameworks=net10.0-android `
-            -o ./publish/android
-      
-      - name: Find and rename APK
-        shell: pwsh
-        run: |
-          $apk = Get-ChildItem -Path ./publish/android -Filter "*.apk" -Recurse | Select-Object -First 1
-          if ($apk) {
-            Copy-Item $apk.FullName -Destination ./Sidecar.Client-android.apk
-          } else {
-            Write-Error "APK not found"
-            exit 1
-          }
-      
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-build
-          path: Sidecar.Client-android.apk
-
-  # =============================================================================
-  # macOS / iOS ビルド
-  # =============================================================================
-  build-apple:
-    runs-on: macos-latest
-    needs: version
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-      
-      - name: Install MAUI workloads
-        run: dotnet workload install maui-maccatalyst maui-ios
-      
-      - name: Restore Shared
-        run: dotnet restore src/Sidecar.Shared/Sidecar.Shared.csproj
-      
-      # macOS Catalyst ビルド
-      - name: Restore (macOS)
-        run: |
-          dotnet restore src/Sidecar.Client/Sidecar.Client.csproj \
-            -p:TargetFramework=net10.0-maccatalyst
-      
-      - name: Build macOS
-        run: |
-          dotnet publish src/Sidecar.Client/Sidecar.Client.csproj \
-            -c Release \
-            -f net10.0-maccatalyst \
-            -p:TargetFrameworks=net10.0-maccatalyst \
-            -o ./publish/macos
-      
-      - name: Create macOS archive
-        run: |
-          cd ./publish/macos
-          zip -r ../../Sidecar.Client-macos.zip .
-      
-      # iOS ビルド (署名なし - シミュレーター用)
-      - name: Restore (iOS)
-        run: |
-          dotnet restore src/Sidecar.Client/Sidecar.Client.csproj \
-            -p:TargetFramework=net10.0-ios
-      
-      - name: Build iOS (Simulator)
-        run: |
-          dotnet build src/Sidecar.Client/Sidecar.Client.csproj \
-            -c Release \
-            -f net10.0-ios \
-            -p:TargetFrameworks=net10.0-ios \
-            -p:RuntimeIdentifier=iossimulator-arm64 \
-            -p:_BundlerDebug=false
-        continue-on-error: true
-      
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: apple-builds
-          path: |
-            Sidecar.Client-macos.zip
-
-  # =============================================================================
-  # リリース作成
-  # =============================================================================
-  release:
-    runs-on: ubuntu-latest
-    needs: [version, build-windows, build-android, build-apple]
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ./artifacts
-          merge-multiple: true
-      
-      - name: List artifacts
-        run: ls -la ./artifacts
-      
       - name: Check if tag exists
         id: check_tag
+        shell: pwsh
         run: |
-          if git ls-remote --tags origin | grep -q "refs/tags/${{ needs.version.outputs.version }}"; then
-            echo "TAG_EXISTS=true" >> $GITHUB_OUTPUT
-          else
-            echo "TAG_EXISTS=false" >> $GITHUB_OUTPUT
-          fi
+          $tagExists = git tag -l "${{ steps.version.outputs.VERSION }}"
+          if ($tagExists) {
+            echo "TAG_EXISTS=true" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "TAG_EXISTS=false" >> $env:GITHUB_OUTPUT
+          }
       
       - name: Create Release
         if: steps.check_tag.outputs.TAG_EXISTS == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.version.outputs.version }}
-          name: Release ${{ needs.version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: Release ${{ steps.version.outputs.VERSION }}
           body: |
-            ## Sidecar Release ${{ needs.version.outputs.version }}
+            ## Sidecar Release ${{ steps.version.outputs.VERSION }}
             
             ### 📦 Downloads
             
@@ -259,29 +96,21 @@ jobs:
             |----------|------|-------------|
             | 🖥️ Windows Host | `Sidecar.Host-win-x64.zip` | 配信側アプリ（Windows専用） |
             | 🖥️ Windows Client | `Sidecar.Client-win-x64.zip` | 視聴側アプリ |
-            | 🤖 Android | `Sidecar.Client-android.apk` | 視聴側アプリ |
-            | 🍎 macOS | `Sidecar.Client-macos.zip` | 視聴側アプリ |
             
             ### 🔧 Changes
             
-            Commit: ${{ needs.version.outputs.short_sha }}
+            Commit: ${{ steps.version.outputs.SHORT_SHA }}
             
             ---
             
-            #### インストール方法
+            **Host (配信側)**: Windows 10/11 で動作します。キャプチャデバイスが必要です。
             
-            **Windows**: ZIPを解凍して実行
+            **Client (視聴側)**: Windows 10/11 で動作します。ホストに接続してストリーミングを視聴できます。
             
-            **Android**: APKをダウンロードしてインストール（提供元不明のアプリを許可する必要があります）
-            
-            **macOS**: ZIPを解凍してApplicationsフォルダに移動
-            
-            > ⚠️ **iOS**: 署名の関係上、現在はビルドを提供していません。ソースからビルドしてください。
+            > 📱 **Android/iOS/macOS**: ソースからビルドしてください。
           files: |
-            ./artifacts/Sidecar.Host-win-x64.zip
-            ./artifacts/Sidecar.Client-win-x64.zip
-            ./artifacts/Sidecar.Client-android.apk
-            ./artifacts/Sidecar.Client-macos.zip
+            Sidecar.Host-win-x64.zip
+            Sidecar.Client-win-x64.zip
           draft: false
           prerelease: false
           generate_release_notes: true
