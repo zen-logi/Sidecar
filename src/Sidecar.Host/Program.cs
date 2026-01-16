@@ -19,11 +19,8 @@ var services = new ServiceCollection();
 // ロギング設定
 services.AddLogging(builder =>
 {
-    builder.SetMinimumLevel(LogLevel.Information);
-    builder.AddConsole(options =>
-    {
-        options.FormatterName = "simple";
-    });
+    _ = builder.SetMinimumLevel(LogLevel.Information);
+    _ = builder.AddConsole(options => options.FormatterName = "simple");
 });
 
 services.AddSidecarHostServices();

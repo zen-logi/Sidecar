@@ -13,24 +13,19 @@ namespace Sidecar.Host.Services;
 /// <summary>
 /// OpenCVを使用してカメラデバイスからフレームをキャプチャするサービス。
 /// </summary>
-public sealed class CameraService : ICameraService
+/// <remarks>
+/// <see cref="CameraService"/> クラスの新しいインスタンスを初期化します。
+/// </remarks>
+/// <param name="logger">ロガー。</param>
+public sealed class CameraService(ILogger<CameraService> logger) : ICameraService
 {
-    private readonly ILogger<CameraService> _logger;
+    private readonly ILogger<CameraService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private VideoCapture? _capture;
     private byte[]? _latestFrame;
     private long _frameNumber;
     private CancellationTokenSource? _captureTokenSource;
     private Task? _captureTask;
     private bool _disposed;
-
-    /// <summary>
-    /// <see cref="CameraService"/> クラスの新しいインスタンスを初期化します。
-    /// </summary>
-    /// <param name="logger">ロガー。</param>
-    public CameraService(ILogger<CameraService> logger)
-    {
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
 
     /// <inheritdoc />
     public event EventHandler<FrameEventArgs>? FrameAvailable;
@@ -77,7 +72,7 @@ public sealed class CameraService : ICameraService
         }
 
         // 低遅延設定: バッファサイズを最小化
-        _capture.Set(VideoCaptureProperties.BufferSize, 1);
+        _ = _capture.Set(VideoCaptureProperties.BufferSize, 1);
 
         _captureTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _captureTask = Task.Run(() => CaptureLoop(_captureTokenSource.Token), _captureTokenSource.Token);
@@ -141,7 +136,7 @@ public sealed class CameraService : ICameraService
             }
 
             // JPEG圧縮
-            Cv2.ImEncode(".jpg", frame, out var jpegData, jpegParams);
+            _ = Cv2.ImEncode(".jpg", frame, out var jpegData, jpegParams);
 
             var frameNumber = Interlocked.Increment(ref _frameNumber);
             var frameData = new FrameData(jpegData, DateTime.UtcNow, frameNumber);
@@ -167,7 +162,7 @@ public sealed class CameraService : ICameraService
 
         // 同期的に停止（Dispose は同期メソッドのため）
         _captureTokenSource?.Cancel();
-        _captureTask?.Wait(TimeSpan.FromSeconds(2));
+        _ = (_captureTask?.Wait(TimeSpan.FromSeconds(2)));
 
         _capture?.Release();
         _capture?.Dispose();

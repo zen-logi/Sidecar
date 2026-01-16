@@ -16,26 +16,20 @@ namespace Sidecar.Host.Services;
 /// <summary>
 /// TCPベースのMJPEGストリーミングサーバー。
 /// </summary>
-public sealed class StreamServer : IStreamServer
+/// <remarks>
+/// <see cref="StreamServer"/> クラスの新しいインスタンスを初期化します。
+/// </remarks>
+/// <param name="cameraService">カメラサービス。</param>
+/// <param name="logger">ロガー。</param>
+public sealed class StreamServer(ICameraService cameraService, ILogger<StreamServer> logger) : IStreamServer
 {
-    private readonly ICameraService _cameraService;
-    private readonly ILogger<StreamServer> _logger;
+    private readonly ICameraService _cameraService = cameraService ?? throw new ArgumentNullException(nameof(cameraService));
+    private readonly ILogger<StreamServer> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly ConcurrentDictionary<Guid, TcpClient> _clients = new();
     private TcpListener? _listener;
     private CancellationTokenSource? _serverTokenSource;
     private Task? _acceptTask;
     private bool _disposed;
-
-    /// <summary>
-    /// <see cref="StreamServer"/> クラスの新しいインスタンスを初期化します。
-    /// </summary>
-    /// <param name="cameraService">カメラサービス。</param>
-    /// <param name="logger">ロガー。</param>
-    public StreamServer(ICameraService cameraService, ILogger<StreamServer> logger)
-    {
-        _cameraService = cameraService ?? throw new ArgumentNullException(nameof(cameraService));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
 
     /// <inheritdoc />
     public int ConnectedClientCount => _clients.Count;
@@ -141,7 +135,7 @@ public sealed class StreamServer : IStreamServer
                 client.NoDelay = true;
 
                 var clientId = Guid.NewGuid();
-                _clients.TryAdd(clientId, client);
+                _ = _clients.TryAdd(clientId, client);
 
                 _logger.LogInformation("クライアント接続: {RemoteEndPoint} (ID: {ClientId})", client.Client.RemoteEndPoint, clientId);
 
@@ -197,7 +191,7 @@ public sealed class StreamServer : IStreamServer
         }
         finally
         {
-            _clients.TryRemove(clientId, out _);
+            _ = _clients.TryRemove(clientId, out _);
             client.Close();
             _logger.LogInformation("クライアント切断: {ClientId}", clientId);
         }
@@ -221,7 +215,7 @@ public sealed class StreamServer : IStreamServer
         {
             if (!client.Connected)
             {
-                _clients.TryRemove(clientId, out _);
+                _ = _clients.TryRemove(clientId, out _);
                 continue;
             }
 
@@ -241,7 +235,7 @@ public sealed class StreamServer : IStreamServer
             {
                 // 送信エラーの場合はクライアントを削除
                 _logger.LogDebug(ex, "クライアント {ClientId} へのフレーム送信エラー", clientId);
-                _clients.TryRemove(clientId, out _);
+                _ = _clients.TryRemove(clientId, out _);
                 try
                 {
                     client.Close();
@@ -267,7 +261,7 @@ public sealed class StreamServer : IStreamServer
         // 同期的に停止
         _cameraService.FrameAvailable -= OnFrameAvailable;
         _serverTokenSource?.Cancel();
-        _acceptTask?.Wait(TimeSpan.FromSeconds(2));
+        _ = (_acceptTask?.Wait(TimeSpan.FromSeconds(2)));
 
         foreach (var client in _clients.Values)
         {

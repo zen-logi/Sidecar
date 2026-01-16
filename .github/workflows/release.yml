@@ -27,6 +27,10 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       
+      - name: Install MAUI workloads
+        run: |
+          dotnet workload install maui-windows
+      
       - name: Get version
         id: version
         shell: pwsh

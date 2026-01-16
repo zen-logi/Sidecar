@@ -20,8 +20,8 @@ public static class HostServiceExtensions
     /// <returns>サービスコレクション。</returns>
     public static IServiceCollection AddSidecarHostServices(this IServiceCollection services)
     {
-        services.AddSingleton<ICameraService, CameraService>();
-        services.AddSingleton<IStreamServer, StreamServer>();
+        _ = services.AddSingleton<ICameraService, CameraService>();
+        _ = services.AddSingleton<IStreamServer, StreamServer>();
 
         return services;
     }
