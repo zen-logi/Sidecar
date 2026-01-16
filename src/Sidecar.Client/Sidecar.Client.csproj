@@ -11,6 +11,8 @@
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishReadyToRun>false</PublishReadyToRun>
 
     <!-- Display name -->
     <ApplicationTitle>Sidecar Client</ApplicationTitle>
