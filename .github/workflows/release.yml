@@ -43,8 +43,13 @@ jobs:
           echo "SHORT_SHA=$shortSha" >> $env:GITHUB_OUTPUT
           Write-Host "Version: $version"
       
-      - name: Restore
-        run: dotnet restore
+      - name: Restore Host
+        run: dotnet restore src/Sidecar.Host/Sidecar.Host.csproj
+      
+      - name: Restore Client (Windows only)
+        run: |
+          dotnet restore src/Sidecar.Client/Sidecar.Client.csproj `
+            -p:TargetFrameworks=net10.0-windows10.0.19041.0
       
       - name: Build Host
         run: |
