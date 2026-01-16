@@ -1,0 +1,36 @@
+// <copyright file="IStreamServer.cs" company="Sidecar">
+// Copyright (c) Sidecar. All rights reserved.
+// </copyright>
+
+namespace Sidecar.Host.Interfaces;
+
+/// <summary>
+/// MJPEGストリームを配信するサーバーのインターフェース。
+/// </summary>
+public interface IStreamServer : IDisposable
+{
+    /// <summary>
+    /// サーバーを開始します。
+    /// </summary>
+    /// <param name="port">待ち受けポート番号。</param>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <returns>非同期操作を表すタスク。</returns>
+    Task StartAsync(int port, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// サーバーを停止します。
+    /// </summary>
+    /// <param name="cancellationToken">キャンセルトークン。</param>
+    /// <returns>非同期操作を表すタスク。</returns>
+    Task StopAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 接続中のクライアント数を取得します。
+    /// </summary>
+    int ConnectedClientCount { get; }
+
+    /// <summary>
+    /// サーバーが実行中かどうかを取得します。
+    /// </summary>
+    bool IsRunning { get; }
+}

@@ -1,0 +1,147 @@
+# =============================================================================
+# .NET / C# / Visual Studio
+# =============================================================================
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+
+# MSBuild
+*.csproj.user
+*.vbproj.user
+*.fsproj.user
+
+# .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Rider
+.idea/
+*.sln.iml
+
+# User-specific files
+*.userprefs
+
+# Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.VisualState.xml
+TestResult.xml
+nunit-*.xml
+
+# NCrunch
+_NCrunch_*
+.*crunch*.local.xml
+nCrunchTemp_*
+
+# Code coverage
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# Publish output
+publish/
+PublishOutput*/
+
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+
+# IDE
+*.swp
+*.swo
+
+# Backup files
+*.bak
+
+# =============================================================================
+# MAUI / Xamarin
+# =============================================================================
+*.app
+!*.app/
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.apk
+*.aab
+
+# Android
+local.properties
+
+# iOS
+*.xcuserstate
+xcuserdata/
+
+# =============================================================================
+# SkiaSharp / OpenCV
+# =============================================================================
+# Native libraries may be downloaded/copied during build
+runtimes/
+
+# =============================================================================
+# Misc
+# =============================================================================
+
+# Local environment settings
+.env
+.env.local
+*.local.json
+appsettings.Development.json
+appsettings.Local.json
+
+# Secrets
+secrets.json
+
+# Temp files
+*.tmp
+*.temp
+~$*
+
+# JetBrains Rider
+.idea/
+*.sln.iml
