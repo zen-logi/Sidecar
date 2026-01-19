@@ -90,6 +90,13 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _connectionTokenSource;
     private bool _disposed;
 
+    // Preferences keys
+    private const string PrefHostAddress = "HostAddress";
+    private const string PrefSaturation = "Saturation";
+    private const string PrefContrast = "Contrast";
+    private const string PrefBrightness = "Brightness";
+    private const string PrefColorMode = "ColorMode";
+
     /// <summary>
     /// 色補正モードの選択肢。
     /// </summary>
@@ -129,20 +136,25 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedColorModeOptionChanged(ColorModeOption value)
     {
-        // 変更通知が必要な場合はここに記述
+        if (value != null)
+        {
+            Preferences.Default.Set(PrefColorMode, (int)value.Mode);
+        }
     }
 
-    /// <summary>
-    /// <see cref="MainPageViewModel"/> クラスの新しいインスタンスを初期化します。
-    /// </summary>
-    /// <param name="streamClient">ストリームクライアント。</param>
     public MainPageViewModel(IStreamClient streamClient)
     {
         _streamClient = streamClient ?? throw new ArgumentNullException(nameof(streamClient));
         _streamClient.FrameReceived += OnFrameReceived;
         
-        // 初期選択
-        SelectedColorModeOption = ColorModeOptions[0];
+        // Load saved settings
+        HostAddress = Preferences.Default.Get(PrefHostAddress, string.Empty);
+        Saturation = Preferences.Default.Get(PrefSaturation, 1.0f);
+        Contrast = Preferences.Default.Get(PrefContrast, 1.0f);
+        Brightness = Preferences.Default.Get(PrefBrightness, 0.0f);
+        
+        var savedMode = (ColorMode)Preferences.Default.Get(PrefColorMode, (int)ColorMode.Default);
+        SelectedColorModeOption = ColorModeOptions.FirstOrDefault(o => o.Mode == savedMode) ?? ColorModeOptions[0];
     }
 
     /// <summary>
@@ -150,6 +162,11 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// </summary>
     [ObservableProperty]
     public partial string HostAddress { get; set; } = string.Empty;
+
+    partial void OnHostAddressChanged(string value)
+    {
+        Preferences.Default.Set(PrefHostAddress, value);
+    }
 
     /// <summary>
     /// ポート番号。
@@ -174,6 +191,39 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// </summary>
     [ObservableProperty]
     public partial bool IsConnecting { get; set; }
+
+    /// <summary>
+    /// 彩度。
+    /// </summary>
+    [ObservableProperty]
+    private float _saturation = 1.0f;
+
+    partial void OnSaturationChanged(float value)
+    {
+        Preferences.Default.Set(PrefSaturation, value);
+    }
+
+    /// <summary>
+    /// コントラスト。
+    /// </summary>
+    [ObservableProperty]
+    private float _contrast = 1.0f;
+
+    partial void OnContrastChanged(float value)
+    {
+        Preferences.Default.Set(PrefContrast, value);
+    }
+
+    /// <summary>
+    /// 明るさ。
+    /// </summary>
+    [ObservableProperty]
+    private float _brightness = 0.0f;
+
+    partial void OnBrightnessChanged(float value)
+    {
+        Preferences.Default.Set(PrefBrightness, value);
+    }
 
     /// <summary>
     /// 最新フレームを取得したときに発生するイベント。
@@ -234,6 +284,17 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
 
         IsConnected = false;
         StatusMessage = "切断済み";
+    }
+
+    /// <summary>
+    /// スライダーの値をデフォルトに戻します。
+    /// </summary>
+    [RelayCommand]
+    private void ResetSliders()
+    {
+        Saturation = 1.0f;
+        Contrast = 1.0f;
+        Brightness = 0.0f;
     }
 
     /// <summary>

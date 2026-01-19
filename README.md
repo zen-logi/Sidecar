@@ -13,8 +13,10 @@ Sidecar は、LAN内でキャプチャデバイス（ゲームキャプチャボ
 ### 主な特徴
 
 - 🚀 **超低遅延**: Nagleアルゴリズム無効化、最新フレームのみ保持する設計
+- 🎨 **高度な色補正**: 補正プリセット（キャプチャカードの色被り救済など）とマニュアル調整（彩度・コントラスト・明るさ）機能
 - 🌍 **クロスプラットフォーム**: Windows, macOS, iOS, Android 対応（クライアント側）
 - 💡 **シンプル**: MJPEG over TCP による軽量なストリーミング
+- 💾 **永続化**: ウィンドウ位置や接続先、色設定を自動保存
 - 📖 **OSS**: MIT ライセンスで公開
 
 ## プロジェクト構成
@@ -79,25 +81,32 @@ dotnet run
 
 起動すると、利用可能なカメラデバイスが一覧表示されます。使用するカメラのインデックスを入力してください。
 
-```
+```text
 =================================
  Sidecar Host - MJPEG Streamer
 =================================
 
-利用可能なカメラデバイスを検索中...
+info: Program[0]
+      利用可能なカメラデバイスを検索中...
 
 3 個のカメラデバイスが見つかりました:
-  [0] Camera 0
-  [1] Camera 1
-  [2] Camera 2
+  [0] Camera 0 (USB Video)
+  [1] Camera 1 (Capture Card)
+  [2] Camera 2 (Integrated Webcam)
 
 使用するカメラのインデックスを入力してください: 1
 
-カメラ 1 でキャプチャを開始します...
-ストリーミングサーバーがポート 8554 で開始しました。
+info: Sidecar.Host.Services.CameraService[0]
+      Selected Format: JPEG, 1920x1080 @ 60
+info: Sidecar.Host.Services.CameraService[0]
+      Started FlashCap on Camera 1
+info: Sidecar.Host.Services.StreamServer[0]
+      ストリーミングサーバーがポート 8554 で開始しました
 
 接続先: http://<このPCのIPアドレス>:8554
 Ctrl+C で終了します。
+
+接続クライアント数: 0
 ```
 
 ### コマンドライン引数
@@ -143,7 +152,7 @@ dotnet run -f net10.0-windows10.0.19041.0
 │                     Sidecar.Host                            │
 │  ┌────────────────┐       ┌─────────────────────────────┐  │
 │  │  CameraService │──────►│     StreamServer            │  │
-│  │  (OpenCV)      │ JPEG  │  (TCP + MJPEG Boundary)     │  │
+│  │  (FlashCap)    │ JPEG  │  (TCP + MJPEG Boundary)     │  │
 │  └────────────────┘       └─────────────────────────────┘  │
 │            │                           │                    │
 │     [最新フレームのみ保持]       [NoDelay=true]            │
@@ -161,21 +170,15 @@ dotnet run -f net10.0-windows10.0.19041.0
 │            │                                │               │
 │     [NoDelay=true]                   [60fps描画ループ]      │
 │     [Fast-Forward]                   [アスペクト比維持]     │
+│                                      [高度なカラーフィルタ]  │
 └─────────────────────────────────────────────────────────────┘
 ```
-
-### 低遅延設計のポイント
-
-1. **Nagleアルゴリズム無効化**: `TcpClient.NoDelay = true`
-2. **最小バッファリング**: カメラは最新1フレームのみ保持
-3. **Fast-Forward**: 古いフレームが溜まった場合は破棄
-4. **非同期処理**: UIスレッドをブロックしない設計
 
 ## 技術スタック
 
 | コンポーネント | 技術 |
 |---------------|------|
-| ホスト | .NET 10.0, OpenCvSharp4 |
+| ホスト | .NET 10.0, FlashCap, OpenCvSharp4 |
 | クライアント | .NET MAUI, SkiaSharp, CommunityToolkit.Mvvm |
 | ストリーミング | MJPEG over TCP |
 | CI/CD | GitHub Actions |

@@ -78,6 +78,26 @@
                             BackgroundColor="#252525"
                             TitleColor="#666666"/>
                 </Grid>
+                
+                <!-- Sliders -->
+                <VerticalStackLayout Spacing="5">
+                    <Label Text="{Binding Saturation, StringFormat='Saturation: {0:F2}'}" TextColor="White" FontSize="12"/>
+                    <Slider Value="{Binding Saturation}" Minimum="0" Maximum="3" />
+                    
+                    <Label Text="{Binding Contrast, StringFormat='Contrast: {0:F2}'}" TextColor="White" FontSize="12"/>
+                    <Slider Value="{Binding Contrast}" Minimum="0" Maximum="3" />
+                    
+                    <Label Text="{Binding Brightness, StringFormat='Brightness: {0:F2}'}" TextColor="White" FontSize="12"/>
+                    <Slider Value="{Binding Brightness}" Minimum="-1" Maximum="1" />
+                    
+                    <Button Text="Reset Sliders" 
+                            Command="{Binding ResetSlidersCommand}"
+                            HeightRequest="30"
+                            Padding="0"
+                            FontSize="10"
+                            BackgroundColor="#444444" 
+                            TextColor="White" />
+                </VerticalStackLayout>
 
                 <Button Text="Connect" 
                         Command="{Binding ConnectCommand}" 

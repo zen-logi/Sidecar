@@ -105,17 +105,38 @@ public partial class MainPage : ContentPage
 
                 // カラーフィルターの適用
                 var mode = _viewModel.SelectedColorModeOption.Mode;
-                if (mode != ColorMode.Default)
+                var baseMatrix = GetBaseColorMatrix(mode);
+                var adjustmentMatrix = GetAdjustmentMatrix(_viewModel.Saturation, _viewModel.Contrast, _viewModel.Brightness);
+
+                float[]? finalMatrix = null;
+
+                if (baseMatrix != null && adjustmentMatrix != null)
                 {
-                    paint.ColorFilter = CreateColorFilter(mode);
+                    // Apply Adjustment (Outer) * Base (Inner)
+                    // Result = Adj * Base
+                    finalMatrix = MultiplyColorMatrix(adjustmentMatrix, baseMatrix);
+                }
+                else if (baseMatrix != null)
+                {
+                    finalMatrix = baseMatrix;
+                }
+                else if (adjustmentMatrix != null)
+                {
+                    finalMatrix = adjustmentMatrix;
+                }
+
+                if (finalMatrix != null)
+                {
+                    paint.ColorFilter = SKColorFilter.CreateColorMatrix(finalMatrix);
                 }
 
                 canvas.DrawBitmap(_currentBitmap, destRect, paint);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // 描画エラーは無視
+            // 描画エラーのログ出し（コンソールデバッグ用）
+            System.Diagnostics.Debug.WriteLine($"PaintSurface Error: {ex}");
         }
         finally
         {
@@ -124,16 +145,108 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
-    /// 指定されたモードに応じたカラーフィルターを作成します。
+    /// 2つのカラーマトリックスを掛け合わせます (A * B)。
     /// </summary>
-    private static SKColorFilter? CreateColorFilter(ColorMode mode)
+    private static float[] MultiplyColorMatrix(float[] matrixA, float[] matrixB)
+    {
+        // A = 4x5, B = 4x5
+        // Treat as 5x5 with last row [0,0,0,0,1]
+        
+        var result = new float[20];
+
+        for (int row = 0; row < 4; row++)
+        {
+            for (int col = 0; col < 5; col++)
+            {
+                float sum = 0;
+                
+                // k goes 0..3 (Current logic handles the 4x4 scale part + logic for 5th col)
+                for (int k = 0; k < 4; k++)
+                {
+                    // A[row, k] * B[k, col]
+                    sum += matrixA[row * 5 + k] * matrixB[k * 5 + col];
+                }
+
+                // Interaction with the theoretical 5th row of B
+                // If col < 4, B[4, col] is 0.
+                // If col == 4, B[4, 4] is 1.
+                if (col == 4)
+                {
+                    // A[row, 4] * B[4, 4] (which is 1)
+                    sum += matrixA[row * 5 + 4];
+                }
+
+                result[row * 5 + col] = sum;
+            }
+        }
+
+        return result;
+    }
+
+    private static float[]? GetAdjustmentMatrix(float saturation, float contrast, float brightness)
+    {
+        // Identity check
+        if (Math.Abs(saturation - 1.0f) < 0.01f && 
+            Math.Abs(contrast - 1.0f) < 0.01f && 
+            Math.Abs(brightness) < 0.01f)
+        {
+            return null;
+        }
+
+        // 1. Contrast (Scaling around 0.5)
+        // C' = (C - 0.5) * c + 0.5 = c*C + 0.5*(1-c)
+        float t = 0.5f * (1.0f - contrast);
+        var contrastMatrix = new float[]
+        {
+            contrast, 0, 0, 0, t,
+            0, contrast, 0, 0, t,
+            0, 0, contrast, 0, t,
+            0, 0, 0, 1, 0
+        };
+
+        // 2. Saturation
+        // Lum = 0.2126*R + 0.7152*G + 0.0722*B
+        // R' = Lum + (R - Lum) * s = (1-s)*Lum + s*R
+        float sr = (1 - saturation) * 0.2126f;
+        float sg = (1 - saturation) * 0.7152f;
+        float sb = (1 - saturation) * 0.0722f;
+        
+        var satMatrix = new float[]
+        {
+            sr + saturation, sg, sb, 0, 0,
+            sr, sg + saturation, sb, 0, 0,
+            sr, sg, sb + saturation, 0, 0,
+            0, 0, 0, 1, 0
+        };
+
+        // 3. Brightness
+        var brightMatrix = new float[]
+        {
+            1, 0, 0, 0, brightness,
+            0, 1, 0, 0, brightness,
+            0, 0, 1, 0, brightness,
+            0, 0, 0, 1, 0
+        };
+
+        // Combine: Contrast -> Saturation -> Brightness
+        // Matrix multiplication: Bright * (Sat * Cont)
+        // Multiply(A, B) means A * B (Apply B then A)
+        
+        var temp = MultiplyColorMatrix(satMatrix, contrastMatrix);
+        return MultiplyColorMatrix(brightMatrix, temp);
+    }
+
+    /// <summary>
+    /// 指定されたモードに応じたベースカラーマトリックスを作成します。
+    /// </summary>
+    private static float[]? GetBaseColorMatrix(ColorMode mode)
     {
         // R, G, B, A の順序
         // Matrix:
         // R' = R*m0 + G*m1 + B*m2 + A*m3 + m4
         // ...
 
-        float[] matrix;
+        float[]? matrix = null;
 
         switch (mode)
         {
@@ -338,12 +451,9 @@ public partial class MainPage : ContentPage
                     0, 0, 0, 1, 0
                 };
                 break;
-
-            default:
-                return null;
         }
 
-        return SKColorFilter.CreateColorMatrix(matrix);
+        return matrix;
     }
 
     /// <summary>
