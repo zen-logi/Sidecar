@@ -87,7 +87,7 @@ public sealed class CameraService : ICameraService, IDisposable
         {
             byte[] jpegData;
 
-            byte[] jpegData;
+
 
             // 1. MJPG/JPEGの場合、高速パス (そのままコピー)
             if (_characteristics?.PixelFormat == PixelFormats.JPEG)
