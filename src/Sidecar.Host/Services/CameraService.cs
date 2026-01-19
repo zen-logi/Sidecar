@@ -10,6 +10,7 @@ public sealed class CameraService : ICameraService, IDisposable
 {
     private readonly ILogger<CameraService> _logger;
     private CaptureDevice? _captureDevice;
+    private VideoCharacteristics? _characteristics;
     private byte[]? _latestFrame;
     private long _frameNumber;
     private bool _disposed;
@@ -51,16 +52,16 @@ public sealed class CameraService : ICameraService, IDisposable
 
         var targetDescriptor = descriptorList[deviceIndex];
         
-        // Strategy: Prefer MJPG (pass-through) > YUYV (convert) > Any
+        // 戦略: JPEG/MJPGを優先 (パススルー) > YUYV (変換) > その他
         var characteristics = targetDescriptor.Characteristics
-            .OrderByDescending(c => c.PixelFormat == PixelFormats.MJPG)
+            .OrderByDescending(c => c.PixelFormat == PixelFormats.JPEG)
             .ThenByDescending(c => c.PixelFormat == PixelFormats.YUYV)
-            .ThenByDescending(c => c.Width * c.Height) // Prefer higher res
+            .ThenByDescending(c => c.Width * c.Height) // 高解像度を優先
             .FirstOrDefault();
 
         if (characteristics == null)
         {
-             // Fallback to identity (first available)
+             // フォールバック: 最初に見つかったものを使用
              characteristics = targetDescriptor.Characteristics.FirstOrDefault();
         }
 
@@ -68,6 +69,9 @@ public sealed class CameraService : ICameraService, IDisposable
         {
              throw new InvalidOperationException("No valid characteristics found for device.");
         }
+
+        // コールバックで使用するために保持
+        _characteristics = characteristics;
 
         _logger.LogInformation($"Selected Format: {characteristics.PixelFormat}, {characteristics.Width}x{characteristics.Height} @ {characteristics.FramesPerSecond}");
 
@@ -83,34 +87,34 @@ public sealed class CameraService : ICameraService, IDisposable
         {
             byte[] jpegData;
 
-            // 1. If MJPG, Fast Path! (Pass-through)
-            if (scope.Buffer.FrameType == PixelFormats.MJPG)
+            byte[] jpegData;
+
+            // 1. MJPG/JPEGの場合、高速パス (そのままコピー)
+            if (_characteristics?.PixelFormat == PixelFormats.JPEG)
             {
                 jpegData = scope.Buffer.CopyImage(); 
             }
             else
             {
-                // 2. If YUY2 or others, verify conversion
-                // FlashCap's ExtractImage usually converts to BMP/RGB
-                // We then need to compress to JPEG for the stream
-                // Note: This is heavier on CPU.
+                // 2. YUY2などの場合、変換を確認
+                // FlashCapのExtractImageは通常BMP/RGBに変換する
+                // ストリーム用にJPEGに圧縮する必要がある
+                // 注意: これはCPU負荷が高い
                 
-                // For direct YUY2 handling, we might want to manually process if FlashCap's default isn't good.
-                // But let's try standard transcode first.
+                // FlashCapのデフォルト変換が良くない場合は手動でYUY2を処理する可能性があるが
+                // まずは標準のトランスコードを試す
                 var imageData = scope.Buffer.ExtractImage();
                 
-                // imageData is likely BMP format (header + data).
-                // We need to convert BMP to JPEG.
-                // Using OpenCvSharp just for encoding if we have raw bytes? 
+                // imageDataはおそらくBMP形式 (ヘッダー + データ)
+                // BMPをJPEGに変換する必要がある
                 
-                // Actually, since we still have OpenCvSharp referenced, we can use it for flexible encoding!
-                // scope.Buffer.ExtractImage() returns a full BMP file array.
-                // It's better to get raw samples if possible (ReferImage).
+                // 参照により OpenCvSharp があるため、柔軟なエンコードに使用可能
+                // scope.Buffer.ExtractImage() は完全なBMPファイル配列を返す
                 
-                // Let's rely on basic extraction for now.
-                // If it's BMP, we can use OpenCV to decode buffer and encode JPEG.
+                // 現状は基本的な抽出に依存する
+                // BMPであれば、OpenCVを使用してバッファをデコードし、JPEGにエンコードできる
                 using var mat = OpenCvSharp.Cv2.ImDecode(imageData, OpenCvSharp.ImreadModes.Color);
-                if (mat.Empty()) return; // Decode failed
+                if (mat.Empty()) return; // デコード失敗
                 
                 OpenCvSharp.Cv2.ImEncode(".jpg", mat, out jpegData, new[] { (int)OpenCvSharp.ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality });
             }
