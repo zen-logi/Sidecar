@@ -60,7 +60,7 @@ public partial class MainPage : ContentPage
         }
         catch
         {
-            // デコードエラーは無視
+            // デコードエラーは無視（次のフレームを待つ）
         }
     }
 
@@ -89,40 +89,43 @@ public partial class MainPage : ContentPage
             var canvas = e.Surface.Canvas;
             canvas.Clear(SKColors.Black);
 
-            SKBitmap? bitmap;
             lock (_bitmapLock)
             {
-                bitmap = _currentBitmap;
-            }
-
-            if (bitmap is null)
-            {
-                // 接続待ちメッセージを表示
-                using var paint = new SKPaint
+                if (_currentBitmap is null)
                 {
-                    Color = SKColors.White,
-                    TextSize = 24,
-                    IsAntialias = true,
-                    TextAlign = SKTextAlign.Center,
-                };
+                    return;
+                }
 
-                canvas.DrawText(
-                    "ストリーミング待機中...",
-                    e.Info.Width / 2f,
-                    e.Info.Height / 2f,
-                    paint);
+                // アスペクト比を維持してスケーリング
+                var destRect = CalculateDestRect(_currentBitmap.Width, _currentBitmap.Height, e.Info.Width, e.Info.Height);
 
-                return;
+                canvas.DrawBitmap(_currentBitmap, destRect);
             }
-
-            // アスペクト比を維持してスケーリング
-            var destRect = CalculateDestRect(bitmap.Width, bitmap.Height, e.Info.Width, e.Info.Height);
-
-            canvas.DrawBitmap(bitmap, destRect);
+        }
+        catch
+        {
+            // 描画エラーは無視
         }
         finally
         {
             _isRendering = false;
+        }
+    }
+
+    /// <summary>
+    /// オーバーレイUIの表示切り替え。
+    /// </summary>
+    private async void OnOverlayTapped(object? sender, EventArgs e)
+    {
+        if (ControlsOverlay.Opacity > 0)
+        {
+            await ControlsOverlay.FadeTo(0, 250);
+            ControlsOverlay.InputTransparent = true;
+        }
+        else
+        {
+            ControlsOverlay.InputTransparent = false;
+            await ControlsOverlay.FadeTo(1, 250);
         }
     }
 
