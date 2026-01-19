@@ -1,180 +1,151 @@
-// <copyright file="CameraService.cs" company="Sidecar">
-// Copyright (c) Sidecar. All rights reserved.
-// </copyright>
-
+using FlashCap;
 using Microsoft.Extensions.Logging;
-using OpenCvSharp;
 using Sidecar.Host.Interfaces;
 using Sidecar.Shared;
 using Sidecar.Shared.Models;
 
 namespace Sidecar.Host.Services;
 
-/// <summary>
-/// OpenCVを使用してカメラデバイスからフレームをキャプチャするサービス。
-/// </summary>
-/// <remarks>
-/// <see cref="CameraService"/> クラスの新しいインスタンスを初期化します。
-/// </remarks>
-/// <param name="logger">ロガー。</param>
-public sealed class CameraService(ILogger<CameraService> logger) : ICameraService
+public sealed class CameraService : ICameraService, IDisposable
 {
-    private readonly ILogger<CameraService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    private VideoCapture? _capture;
+    private readonly ILogger<CameraService> _logger;
+    private CaptureDevice? _captureDevice;
     private byte[]? _latestFrame;
     private long _frameNumber;
-    private CancellationTokenSource? _captureTokenSource;
-    private Task? _captureTask;
     private bool _disposed;
+    private readonly object _lock = new();
 
-    /// <inheritdoc />
     public event EventHandler<FrameEventArgs>? FrameAvailable;
 
-    /// <inheritdoc />
-    public bool IsCapturing => _captureTask is not null && !_captureTask.IsCompleted;
+    public bool IsCapturing => _captureDevice is not null;
 
-    /// <inheritdoc />
+    public CameraService(ILogger<CameraService> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
     public IReadOnlyList<CameraDevice> GetAvailableDevices()
     {
         var devices = new List<CameraDevice>();
-
-        // OpenCVでは直接デバイス名を取得できないため、
-        // インデックスを試行して利用可能なデバイスを検出
-        for (var i = 0; i < 10; i++)
+        var descriptors = new CaptureDevices();
+        int index = 0;
+        foreach (var descriptor in descriptors.EnumerateDescriptors())
         {
-            using var testCapture = new VideoCapture(i);
-            if (testCapture.IsOpened())
-            {
-                devices.Add(new CameraDevice(i, $"Camera {i}"));
-                testCapture.Release();
-            }
+            // FlashCap uses unique IDs, but we'll map to index for compatibility with existing UI
+            devices.Add(new CameraDevice(index++, descriptor.Name));
         }
-
-        _logger.LogDebug("{Count} 個のカメラデバイスが見つかりました", devices.Count);
         return devices.AsReadOnly();
     }
 
-    /// <inheritdoc />
-    public Task StartCaptureAsync(int deviceIndex, CancellationToken cancellationToken = default)
+    public async Task StartCaptureAsync(int deviceIndex, CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_captureDevice is not null) throw new InvalidOperationException("Capturing already started.");
 
-        if (IsCapturing)
+        var descriptors = new CaptureDevices();
+        var descriptorList = descriptors.EnumerateDescriptors().ToList();
+        
+        if (deviceIndex < 0 || deviceIndex >= descriptorList.Count)
         {
-            throw new InvalidOperationException("キャプチャは既に実行中です。");
+             throw new ArgumentOutOfRangeException(nameof(deviceIndex));
         }
 
-        // MediaFoundation (MSMF) バックエンドを使用
-        // Windowsの標準的なAPIで、色空間の扱いがDSHOWと異なるため、こちらで改善するか試行
-        _capture = new VideoCapture(deviceIndex, VideoCaptureAPIs.MSMF);
+        var targetDescriptor = descriptorList[deviceIndex];
+        
+        // Strategy: Prefer MJPG (pass-through) > YUYV (convert) > Any
+        var characteristics = targetDescriptor.Characteristics
+            .OrderByDescending(c => c.PixelFormat == PixelFormats.MJPG)
+            .ThenByDescending(c => c.PixelFormat == PixelFormats.YUYV)
+            .ThenByDescending(c => c.Width * c.Height) // Prefer higher res
+            .FirstOrDefault();
 
-        if (!_capture.IsOpened())
+        if (characteristics == null)
         {
-            // エラーの詳細を出力
-            _logger.LogError("カメラデバイス {DeviceIndex} (DSHOW) のオープンに失敗しました。他のアプリが使用している可能性があります。", deviceIndex);
-            throw new InvalidOperationException($"カメラデバイス {deviceIndex} を開けませんでした。");
+             // Fallback to identity (first available)
+             characteristics = targetDescriptor.Characteristics.FirstOrDefault();
         }
 
-        // 低遅延設定: バッファサイズを最小化
-        _ = _capture.Set(VideoCaptureProperties.BufferSize, 1);
+        if (characteristics == null)
+        {
+             throw new InvalidOperationException("No valid characteristics found for device.");
+        }
 
-        // Format: Auto (Let OpenCV decide)
-        // _ = _capture.Set(VideoCaptureProperties.FourCC, VideoWriter.FourCC('M', 'J', 'P', 'G'));
+        _logger.LogInformation($"Selected Format: {characteristics.PixelFormat}, {characteristics.Width}x{characteristics.Height} @ {characteristics.FramesPerSecond}");
 
-        _captureTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _captureTask = Task.Run(() => CaptureLoop(_captureTokenSource.Token), _captureTokenSource.Token);
-
-        _logger.LogInformation("カメラ {DeviceIndex} でキャプチャを開始しました (Auto)", deviceIndex);
-        return Task.CompletedTask;
+        _captureDevice = await targetDescriptor.OpenAsync(characteristics, OnPixelBufferArrived);
+        await _captureDevice.StartAsync(cancellationToken);
+        
+        _logger.LogInformation($"Started FlashCap on {targetDescriptor.Name}");
     }
 
-    /// <inheritdoc />
-    public async Task StopCaptureAsync(CancellationToken cancellationToken = default)
+    private void OnPixelBufferArrived(PixelBufferScope scope)
     {
-        if (_captureTokenSource is not null)
+        try
         {
-            await _captureTokenSource.CancelAsync();
-        }
+            byte[] jpegData;
 
-        if (_captureTask is not null)
-        {
-            try
+            // 1. If MJPG, Fast Path! (Pass-through)
+            if (scope.Buffer.FrameType == PixelFormats.MJPG)
             {
-                await _captureTask.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
+                jpegData = scope.Buffer.CopyImage(); 
             }
-            catch (TimeoutException)
+            else
             {
-                _logger.LogWarning("キャプチャタスクの停止がタイムアウトしました");
+                // 2. If YUY2 or others, verify conversion
+                // FlashCap's ExtractImage usually converts to BMP/RGB
+                // We then need to compress to JPEG for the stream
+                // Note: This is heavier on CPU.
+                
+                // For direct YUY2 handling, we might want to manually process if FlashCap's default isn't good.
+                // But let's try standard transcode first.
+                var imageData = scope.Buffer.ExtractImage();
+                
+                // imageData is likely BMP format (header + data).
+                // We need to convert BMP to JPEG.
+                // Using OpenCvSharp just for encoding if we have raw bytes? 
+                
+                // Actually, since we still have OpenCvSharp referenced, we can use it for flexible encoding!
+                // scope.Buffer.ExtractImage() returns a full BMP file array.
+                // It's better to get raw samples if possible (ReferImage).
+                
+                // Let's rely on basic extraction for now.
+                // If it's BMP, we can use OpenCV to decode buffer and encode JPEG.
+                using var mat = OpenCvSharp.Cv2.ImDecode(imageData, OpenCvSharp.ImreadModes.Color);
+                if (mat.Empty()) return; // Decode failed
+                
+                OpenCvSharp.Cv2.ImEncode(".jpg", mat, out jpegData, new[] { (int)OpenCvSharp.ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality });
             }
-            catch (OperationCanceledException)
-            {
-                // キャンセルは正常
-            }
-        }
-
-        _capture?.Release();
-        _capture?.Dispose();
-        _capture = null;
-
-        _captureTokenSource?.Dispose();
-        _captureTokenSource = null;
-        _captureTask = null;
-
-        _logger.LogInformation("カメラキャプチャを停止しました");
-    }
-
-    /// <inheritdoc />
-    public byte[]? GetLatestFrame() => Volatile.Read(ref _latestFrame);
-
-    /// <summary>
-    /// キャプチャループを実行します。
-    /// </summary>
-    /// <param name="cancellationToken">キャンセルトークン。</param>
-    private void CaptureLoop(CancellationToken cancellationToken)
-    {
-        using var frame = new Mat();
-        var jpegParams = new[] { (int)ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality };
-
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            if (_capture is null || !_capture.Read(frame) || frame.Empty())
-            {
-                continue;
-            }
-
-            // JPEG圧縮
-            _ = Cv2.ImEncode(".jpg", frame, out var jpegData, jpegParams);
 
             var frameNumber = Interlocked.Increment(ref _frameNumber);
             var frameData = new FrameData(jpegData, DateTime.UtcNow, frameNumber);
-            
-            // 最新フレームを保持（古いフレームは破棄）
-            Volatile.Write(ref _latestFrame, jpegData);
 
-            // イベント発火（スレッドセーフ）
-            var handler = FrameAvailable;
-            handler?.Invoke(this, new FrameEventArgs(frameData));
+            Volatile.Write(ref _latestFrame, jpegData);
+            FrameAvailable?.Invoke(this, new FrameEventArgs(frameData));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing frame");
         }
     }
 
-    /// <summary>
-    /// リソースを解放します。
-    /// </summary>
+    public async Task StopCaptureAsync(CancellationToken cancellationToken = default)
+    {
+        if (_captureDevice != null)
+        {
+            await _captureDevice.StopAsync(cancellationToken);
+            _captureDevice.Dispose();
+            _captureDevice = null;
+        }
+        _logger.LogInformation("Stopped capture.");
+    }
+
+    public byte[]? GetLatestFrame() => Volatile.Read(ref _latestFrame);
+
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        // 同期的に停止（Dispose は同期メソッドのため）
-        _captureTokenSource?.Cancel();
-        _ = (_captureTask?.Wait(TimeSpan.FromSeconds(2)));
-
-        _capture?.Release();
-        _capture?.Dispose();
-        _captureTokenSource?.Dispose();
-
+        if (_disposed) return;
+        _captureDevice?.Dispose();
         _disposed = true;
     }
 }
+
+
