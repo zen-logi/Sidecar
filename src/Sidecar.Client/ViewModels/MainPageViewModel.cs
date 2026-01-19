@@ -12,6 +12,76 @@ using Sidecar.Shared.Models;
 namespace Sidecar.Client.ViewModels;
 
 /// <summary>
+/// 色補正モード。
+/// </summary>
+public enum ColorMode
+{
+    /// <summary>
+    /// デフォルト（補正なし）。
+    /// </summary>
+    Default,
+
+    /// <summary>
+    /// 赤と青を入れ替え (BGR -> RGB)。
+    /// </summary>
+    SwapRedBlue,
+
+    // RGB Permutations for debugging
+    RGB, // Identity
+    RBG,
+    GRB,
+    GBR,
+    BRG, // (SwapRedBlue)
+    BGR,
+
+    /// <summary>
+    /// SDRディスプレイ向け補正。
+    /// </summary>
+    SDRDisplayLike,
+
+    /// <summary>
+    /// グレースケール。
+    /// </summary>
+    Grayscale,
+
+    /// <summary>
+    /// HDR (Rec.2020) -> SDR (Rec.709) Tone Mapping.
+    /// </summary>
+    HDRToSDR,
+
+    /// <summary>
+    /// YUV -> RGB Recovery (Rescue Purple).
+    /// </summary>
+    RescuePurple,
+
+    /// <summary>
+    /// Grayscale using only Red channel (Luma fallback).
+    /// </summary>
+    GrayscaleRed,
+
+    /// <summary>
+    /// Grayscale using only Green channel (Luma fallback).
+    /// </summary>
+    GrayscaleGreen,
+
+    /// <summary>
+    /// Attempt to recover color assuming Green is Luma (Y).
+    /// </summary>
+    RescueGreen,
+
+    /// <summary>
+    /// Rescue Green with boosted Saturation and Contrast.
+    /// </summary>
+    RescueGreenVivid,
+
+    // Channel Inspection
+    InspectRed,
+    InspectGreen,
+    InspectBlue,
+}
+
+
+/// <summary>
 /// MainPageのViewModel。
 /// </summary>
 public partial class MainPageViewModel : ObservableObject, IDisposable
@@ -20,14 +90,71 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _connectionTokenSource;
     private bool _disposed;
 
+    // Preferences keys
+    private const string PrefHostAddress = "HostAddress";
+    private const string PrefSaturation = "Saturation";
+    private const string PrefContrast = "Contrast";
+    private const string PrefBrightness = "Brightness";
+    private const string PrefColorMode = "ColorMode";
+
     /// <summary>
-    /// <see cref="MainPageViewModel"/> クラスの新しいインスタンスを初期化します。
+    /// 色補正モードの選択肢。
     /// </summary>
-    /// <param name="streamClient">ストリームクライアント。</param>
+    public class ColorModeOption
+    {
+        public string DisplayName { get; set; } = string.Empty;
+        public ColorMode Mode { get; set; }
+    }
+
+    /// <summary>
+    /// 利用可能な色補正モードのリスト。
+    /// </summary>
+    public IReadOnlyList<ColorModeOption> ColorModeOptions { get; } = new List<ColorModeOption>
+    {
+        new() { DisplayName = "Default", Mode = ColorMode.Default },
+        new() { DisplayName = "Rescue Purple (YUV Fix)", Mode = ColorMode.RescuePurple },
+        new() { DisplayName = "HDR to SDR (Tone Map)", Mode = ColorMode.HDRToSDR },
+        new() { DisplayName = "SDR Boost (Brighten)", Mode = ColorMode.SDRDisplayLike },
+        new() { DisplayName = "Swap Red/Blue", Mode = ColorMode.SwapRedBlue },
+        new() { DisplayName = "Force RGB", Mode = ColorMode.RGB },
+        new() { DisplayName = "Force GBR", Mode = ColorMode.GBR },
+        new() { DisplayName = "Grayscale (Mix)", Mode = ColorMode.Grayscale },
+        new() { DisplayName = "Grayscale (Red Ch)", Mode = ColorMode.GrayscaleRed },
+        new() { DisplayName = "Grayscale (Green Ch)", Mode = ColorMode.GrayscaleGreen },
+        new() { DisplayName = "Rescue Green (G=Y)", Mode = ColorMode.RescueGreen },
+        new() { DisplayName = "Rescue Green (Vivid)", Mode = ColorMode.RescueGreenVivid },
+        new() { DisplayName = "Inspect Red Channel", Mode = ColorMode.InspectRed },
+        new() { DisplayName = "Inspect Green Channel", Mode = ColorMode.InspectGreen },
+        new() { DisplayName = "Inspect Blue Channel", Mode = ColorMode.InspectBlue },
+    };
+
+    /// <summary>
+    /// 選択された色補正モード。
+    /// </summary>
+    [ObservableProperty]
+    public partial ColorModeOption SelectedColorModeOption { get; set; }
+
+    partial void OnSelectedColorModeOptionChanged(ColorModeOption value)
+    {
+        if (value != null)
+        {
+            Preferences.Default.Set(PrefColorMode, (int)value.Mode);
+        }
+    }
+
     public MainPageViewModel(IStreamClient streamClient)
     {
         _streamClient = streamClient ?? throw new ArgumentNullException(nameof(streamClient));
         _streamClient.FrameReceived += OnFrameReceived;
+        
+        // Load saved settings
+        HostAddress = Preferences.Default.Get(PrefHostAddress, string.Empty);
+        Saturation = Preferences.Default.Get(PrefSaturation, 1.0f);
+        Contrast = Preferences.Default.Get(PrefContrast, 1.0f);
+        Brightness = Preferences.Default.Get(PrefBrightness, 0.0f);
+        
+        var savedMode = (ColorMode)Preferences.Default.Get(PrefColorMode, (int)ColorMode.Default);
+        SelectedColorModeOption = ColorModeOptions.FirstOrDefault(o => o.Mode == savedMode) ?? ColorModeOptions[0];
     }
 
     /// <summary>
@@ -35,6 +162,11 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// </summary>
     [ObservableProperty]
     public partial string HostAddress { get; set; } = string.Empty;
+
+    partial void OnHostAddressChanged(string value)
+    {
+        Preferences.Default.Set(PrefHostAddress, value);
+    }
 
     /// <summary>
     /// ポート番号。
@@ -59,6 +191,39 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// </summary>
     [ObservableProperty]
     public partial bool IsConnecting { get; set; }
+
+    /// <summary>
+    /// 彩度。
+    /// </summary>
+    [ObservableProperty]
+    private float _saturation = 1.0f;
+
+    partial void OnSaturationChanged(float value)
+    {
+        Preferences.Default.Set(PrefSaturation, value);
+    }
+
+    /// <summary>
+    /// コントラスト。
+    /// </summary>
+    [ObservableProperty]
+    private float _contrast = 1.0f;
+
+    partial void OnContrastChanged(float value)
+    {
+        Preferences.Default.Set(PrefContrast, value);
+    }
+
+    /// <summary>
+    /// 明るさ。
+    /// </summary>
+    [ObservableProperty]
+    private float _brightness = 0.0f;
+
+    partial void OnBrightnessChanged(float value)
+    {
+        Preferences.Default.Set(PrefBrightness, value);
+    }
 
     /// <summary>
     /// 最新フレームを取得したときに発生するイベント。
@@ -119,6 +284,17 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
 
         IsConnected = false;
         StatusMessage = "切断済み";
+    }
+
+    /// <summary>
+    /// スライダーの値をデフォルトに戻します。
+    /// </summary>
+    [RelayCommand]
+    private void ResetSliders()
+    {
+        Saturation = 1.0f;
+        Contrast = 1.0f;
+        Brightness = 0.0f;
     }
 
     /// <summary>

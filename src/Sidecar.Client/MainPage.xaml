@@ -33,26 +33,71 @@
                        Margin="0,-12,0,32"
                        CharacterSpacing="1"/>
 
-                <Border StrokeShape="RoundRectangle 16" 
-                        Stroke="Transparent" 
-                        BackgroundColor="#252525" 
-                        Padding="16,8">
-                    <Entry Placeholder="Host Address" 
-                           Text="{Binding HostAddress}" 
-                           TextColor="White" 
-                           PlaceholderColor="#666666" />
-                </Border>
+                <!-- ホストアドレスとポート入力 -->
+                <Grid ColumnDefinitions="2*,*"
+                      ColumnSpacing="12">
+                    <Border Grid.Column="0"
+                            StrokeShape="RoundRectangle 16" 
+                            Stroke="Transparent" 
+                            BackgroundColor="#252525" 
+                            Padding="16,8">
+                        <Entry Placeholder="ホストIPアドレス (例: 192.168.1.100)"
+                               Text="{Binding HostAddress}"
+                               IsEnabled="{Binding IsConnected, Converter={StaticResource InvertedBoolConverter}}"
+                               TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                               Keyboard="Url" />
+                    </Border>
+
+                    <Border Grid.Column="1"
+                            StrokeShape="RoundRectangle 16" 
+                            Stroke="Transparent" 
+                            BackgroundColor="#252525" 
+                            Padding="16,8">
+                        <Entry Placeholder="ポート"
+                               Text="{Binding Port}"
+                               IsEnabled="{Binding IsConnected, Converter={StaticResource InvertedBoolConverter}}"
+                               TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                               Keyboard="Numeric" />
+                    </Border>
+                </Grid>
+
+                <!-- カラーモード選択 -->
+                <Grid ColumnDefinitions="*,2*"
+                      ColumnSpacing="12">
+                    <Label Grid.Column="0"
+                           Text="カラーモード:"
+                           VerticalOptions="Center"
+                           TextColor="White"/>
+                    
+                    <Picker Grid.Column="1"
+                            ItemsSource="{Binding ColorModeOptions}"
+                            ItemDisplayBinding="{Binding DisplayName}"
+                            SelectedItem="{Binding SelectedColorModeOption}"
+                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                            Title="モードを選択"
+                            BackgroundColor="#252525"
+                            TitleColor="#666666"/>
+                </Grid>
                 
-                <Border StrokeShape="RoundRectangle 16" 
-                        Stroke="Transparent" 
-                        BackgroundColor="#252525" 
-                        Padding="16,8">
-                    <Entry Placeholder="Port" 
-                           Text="{Binding Port}" 
-                           Keyboard="Numeric" 
-                           TextColor="White" 
-                           PlaceholderColor="#666666" />
-                </Border>
+                <!-- Sliders -->
+                <VerticalStackLayout Spacing="5">
+                    <Label Text="{Binding Saturation, StringFormat='Saturation: {0:F2}'}" TextColor="White" FontSize="12"/>
+                    <Slider Value="{Binding Saturation}" Minimum="0" Maximum="3" />
+                    
+                    <Label Text="{Binding Contrast, StringFormat='Contrast: {0:F2}'}" TextColor="White" FontSize="12"/>
+                    <Slider Value="{Binding Contrast}" Minimum="0" Maximum="3" />
+                    
+                    <Label Text="{Binding Brightness, StringFormat='Brightness: {0:F2}'}" TextColor="White" FontSize="12"/>
+                    <Slider Value="{Binding Brightness}" Minimum="-1" Maximum="1" />
+                    
+                    <Button Text="Reset Sliders" 
+                            Command="{Binding ResetSlidersCommand}"
+                            HeightRequest="30"
+                            Padding="0"
+                            FontSize="10"
+                            BackgroundColor="#444444" 
+                            TextColor="White" />
+                </VerticalStackLayout>
 
                 <Button Text="Connect" 
                         Command="{Binding ConnectCommand}" 
