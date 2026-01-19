@@ -77,14 +77,13 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
         // 低遅延設定: バッファサイズを最小化
         _ = _capture.Set(VideoCaptureProperties.BufferSize, 1);
 
-        // フォーマット設定: YUY2 (YUYV) を指定
-        // キャプチャボードのRawデータ形式として一般的
-        _ = _capture.Set(VideoCaptureProperties.FourCC, VideoWriter.FourCC('Y', 'U', 'Y', '2'));
+        // Format: Auto (Let OpenCV decide)
+        // _ = _capture.Set(VideoCaptureProperties.FourCC, VideoWriter.FourCC('M', 'J', 'P', 'G'));
 
         _captureTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _captureTask = Task.Run(() => CaptureLoop(_captureTokenSource.Token), _captureTokenSource.Token);
 
-        _logger.LogInformation("カメラ {DeviceIndex} でキャプチャを開始しました (DSHOW/YUY2)", deviceIndex);
+        _logger.LogInformation("カメラ {DeviceIndex} でキャプチャを開始しました (Auto)", deviceIndex);
         return Task.CompletedTask;
     }
 
@@ -133,7 +132,6 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
     private void CaptureLoop(CancellationToken cancellationToken)
     {
         using var frame = new Mat();
-        using var rgbFrame = new Mat(); // 変換用バッファ
         var jpegParams = new[] { (int)ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality };
 
         while (!cancellationToken.IsCancellationRequested)
@@ -143,24 +141,12 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
                 continue;
             }
 
-            // YUY2 (YUYV) -> BGR 変換
-            // 色が変（紫/緑）な場合、YUV信号がそのまま来ている可能性が高いため変換を噛ませる
-            try
-            {
-                Cv2.CvtColor(frame, rgbFrame, ColorConversionCodes.YUV2BGR_YUY2);
-            }
-            catch
-            {
-                // 変換に失敗した場合（既にRGBになっているなど）、そのまま使う
-                frame.CopyTo(rgbFrame);
-            }
-
             // JPEG圧縮
-            _ = Cv2.ImEncode(".jpg", rgbFrame, out var jpegData, jpegParams);
+            _ = Cv2.ImEncode(".jpg", frame, out var jpegData, jpegParams);
 
             var frameNumber = Interlocked.Increment(ref _frameNumber);
             var frameData = new FrameData(jpegData, DateTime.UtcNow, frameNumber);
-
+            
             // 最新フレームを保持（古いフレームは破棄）
             Volatile.Write(ref _latestFrame, jpegData);
 

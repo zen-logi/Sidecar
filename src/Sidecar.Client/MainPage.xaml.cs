@@ -260,12 +260,35 @@ public partial class MainPage : ContentPage
                 break;
 
             case ColorMode.GrayscaleRed:
+            case ColorMode.InspectRed:
                 // Use Red channel for everything (assuming Red = Y)
                 matrix = new float[]
                 {
                     1, 0, 0, 0, 0,
                     1, 0, 0, 0, 0,
                     1, 0, 0, 0, 0,
+                    0, 0, 0, 1, 0
+                };
+                break;
+
+            case ColorMode.InspectGreen:
+                // Use Green channel for everything
+                matrix = new float[]
+                {
+                    0, 1, 0, 0, 0,
+                    0, 1, 0, 0, 0,
+                    0, 1, 0, 0, 0,
+                    0, 0, 0, 1, 0
+                };
+                break;
+
+            case ColorMode.InspectBlue:
+                // Use Blue channel for everything
+                matrix = new float[]
+                {
+                    0, 0, 1, 0, 0,
+                    0, 0, 1, 0, 0,
+                    0, 0, 1, 0, 0,
                     0, 0, 0, 1, 0
                 };
                 break;
