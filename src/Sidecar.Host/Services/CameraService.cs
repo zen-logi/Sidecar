@@ -75,6 +75,10 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
         // 低遅延設定: バッファサイズを最小化
         _ = _capture.Set(VideoCaptureProperties.BufferSize, 1);
 
+        // フォーマット設定: MJPGを優先 (多くのキャプチャボードで安定)
+        // これにより色空間の誤認識を防ぐ
+        _ = _capture.Set(VideoCaptureProperties.FourCC, VideoWriter.FourCC('M', 'J', 'P', 'G'));
+
         _captureTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _captureTask = Task.Run(() => CaptureLoop(_captureTokenSource.Token), _captureTokenSource.Token);
 

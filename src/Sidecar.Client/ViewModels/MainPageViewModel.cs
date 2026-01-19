@@ -12,6 +12,56 @@ using Sidecar.Shared.Models;
 namespace Sidecar.Client.ViewModels;
 
 /// <summary>
+/// 色補正モード。
+/// </summary>
+public enum ColorMode
+{
+    /// <summary>
+    /// デフォルト（補正なし）。
+    /// </summary>
+    Default,
+
+    /// <summary>
+    /// 赤と青を入れ替え (BGR -> RGB)。
+    /// </summary>
+    SwapRedBlue,
+
+    // RGB Permutations for debugging
+    RGB, // Identity
+    RBG,
+    GRB,
+    GBR,
+    BRG, // (SwapRedBlue)
+    BGR,
+
+    /// <summary>
+    /// SDRディスプレイ向け補正。
+    /// </summary>
+    SDRDisplayLike,
+
+    /// <summary>
+    /// グレースケール。
+    /// </summary>
+    Grayscale,
+
+    /// <summary>
+    /// HDR (Rec.2020) -> SDR (Rec.709) Tone Mapping.
+    /// </summary>
+    HDRToSDR,
+
+    /// <summary>
+    /// YUV -> RGB Recovery (Rescue Purple).
+    /// </summary>
+    RescuePurple,
+
+    /// <summary>
+    /// Grayscale using only Red channel (Luma fallback).
+    /// </summary>
+    GrayscaleRed,
+}
+
+
+/// <summary>
 /// MainPageのViewModel。
 /// </summary>
 public partial class MainPageViewModel : ObservableObject, IDisposable
@@ -21,6 +71,42 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     private bool _disposed;
 
     /// <summary>
+    /// 色補正モードの選択肢。
+    /// </summary>
+    public class ColorModeOption
+    {
+        public string DisplayName { get; set; } = string.Empty;
+        public ColorMode Mode { get; set; }
+    }
+
+    /// <summary>
+    /// 利用可能な色補正モードのリスト。
+    /// </summary>
+    public IReadOnlyList<ColorModeOption> ColorModeOptions { get; } = new List<ColorModeOption>
+    {
+        new() { DisplayName = "Default", Mode = ColorMode.Default },
+        new() { DisplayName = "Rescue Purple (YUV Fix)", Mode = ColorMode.RescuePurple },
+        new() { DisplayName = "HDR to SDR (Tone Map)", Mode = ColorMode.HDRToSDR },
+        new() { DisplayName = "SDR Boost (Brighten)", Mode = ColorMode.SDRDisplayLike },
+        new() { DisplayName = "Swap Red/Blue", Mode = ColorMode.SwapRedBlue },
+        new() { DisplayName = "Force RGB", Mode = ColorMode.RGB },
+        new() { DisplayName = "Force GBR", Mode = ColorMode.GBR },
+        new() { DisplayName = "Grayscale (Mix)", Mode = ColorMode.Grayscale },
+        new() { DisplayName = "Grayscale (Red Ch)", Mode = ColorMode.GrayscaleRed },
+    };
+
+    /// <summary>
+    /// 選択された色補正モード。
+    /// </summary>
+    [ObservableProperty]
+    public partial ColorModeOption SelectedColorModeOption { get; set; }
+
+    partial void OnSelectedColorModeOptionChanged(ColorModeOption value)
+    {
+        // 変更通知が必要な場合はここに記述
+    }
+
+    /// <summary>
     /// <see cref="MainPageViewModel"/> クラスの新しいインスタンスを初期化します。
     /// </summary>
     /// <param name="streamClient">ストリームクライアント。</param>
@@ -28,6 +114,9 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     {
         _streamClient = streamClient ?? throw new ArgumentNullException(nameof(streamClient));
         _streamClient.FrameReceived += OnFrameReceived;
+        
+        // 初期選択
+        SelectedColorModeOption = ColorModeOptions[0];
     }
 
     /// <summary>
