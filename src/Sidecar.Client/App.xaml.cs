@@ -9,13 +9,16 @@ namespace Sidecar.Client;
 /// </summary>
 public partial class App : Application
 {
+    private readonly IServiceProvider _serviceProvider;
+
     /// <summary>
     /// <see cref="App"/> クラスの新しいインスタンスを初期化します。
     /// </summary>
-    /// <param name="mainPage">メインページ。</param>
-    public App(MainPage mainPage)
+    /// <param name="serviceProvider">サービスプロバイダー。</param>
+    public App(IServiceProvider serviceProvider)
     {
         InitializeComponent();
+        _serviceProvider = serviceProvider;
     }
 
     /// <summary>
@@ -25,7 +28,8 @@ public partial class App : Application
     /// <returns>作成されたウィンドウ。</returns>
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        var mainPage = Handler?.MauiContext?.Services.GetService<MainPage>();
-        return new Window(new NavigationPage(mainPage ?? new ContentPage()));
+        // リソースがロードされた後にMainPageを作成
+        var mainPage = _serviceProvider.GetRequiredService<MainPage>();
+        return new Window(new NavigationPage(mainPage));
     }
 }
