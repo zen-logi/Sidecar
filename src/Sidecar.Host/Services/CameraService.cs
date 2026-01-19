@@ -64,8 +64,9 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
             throw new InvalidOperationException("キャプチャは既に実行中です。");
         }
 
-        // DirectShowバックエンドを使用（色味の問題回避のため）
-        _capture = new VideoCapture(deviceIndex, VideoCaptureAPIs.DSHOW);
+        // MediaFoundation (MSMF) バックエンドを使用
+        // Windowsの標準的なAPIで、色空間の扱いがDSHOWと異なるため、こちらで改善するか試行
+        _capture = new VideoCapture(deviceIndex, VideoCaptureAPIs.MSMF);
 
         if (!_capture.IsOpened())
         {

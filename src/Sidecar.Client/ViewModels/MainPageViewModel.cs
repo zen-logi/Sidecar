@@ -59,6 +59,21 @@ public enum ColorMode
     /// </summary>
     GrayscaleRed,
 
+    /// <summary>
+    /// Grayscale using only Green channel (Luma fallback).
+    /// </summary>
+    GrayscaleGreen,
+
+    /// <summary>
+    /// Attempt to recover color assuming Green is Luma (Y).
+    /// </summary>
+    RescueGreen,
+
+    /// <summary>
+    /// Rescue Green with boosted Saturation and Contrast.
+    /// </summary>
+    RescueGreenVivid,
+
     // Channel Inspection
     InspectRed,
     InspectGreen,
@@ -98,6 +113,9 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
         new() { DisplayName = "Force GBR", Mode = ColorMode.GBR },
         new() { DisplayName = "Grayscale (Mix)", Mode = ColorMode.Grayscale },
         new() { DisplayName = "Grayscale (Red Ch)", Mode = ColorMode.GrayscaleRed },
+        new() { DisplayName = "Grayscale (Green Ch)", Mode = ColorMode.GrayscaleGreen },
+        new() { DisplayName = "Rescue Green (G=Y)", Mode = ColorMode.RescueGreen },
+        new() { DisplayName = "Rescue Green (Vivid)", Mode = ColorMode.RescueGreenVivid },
         new() { DisplayName = "Inspect Red Channel", Mode = ColorMode.InspectRed },
         new() { DisplayName = "Inspect Green Channel", Mode = ColorMode.InspectGreen },
         new() { DisplayName = "Inspect Blue Channel", Mode = ColorMode.InspectBlue },

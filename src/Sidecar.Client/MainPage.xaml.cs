@@ -271,6 +271,7 @@ public partial class MainPage : ContentPage
                 };
                 break;
 
+            case ColorMode.GrayscaleGreen:
             case ColorMode.InspectGreen:
                 // Use Green channel for everything
                 matrix = new float[]
@@ -278,6 +279,51 @@ public partial class MainPage : ContentPage
                     0, 1, 0, 0, 0,
                     0, 1, 0, 0, 0,
                     0, 1, 0, 0, 0,
+                    0, 0, 0, 1, 0
+                };
+                break;
+
+            case ColorMode.RescueGreen:
+                // Hypothesis: Input Green is Y (Luma).
+                // Screen is Purple (Red+Blue), so Input Red and Blue are strong.
+                // Standard YUV: Y is Luma, U/V are Chroma.
+                // Maybe Input Red is Cr (V) and Input Blue is Cb (U)?
+                // R = Y + 1.402 * (V - 0.5)
+                // G = Y - 0.344 * (U - 0.5) - 0.714 * (V - 0.5)
+                // B = Y + 1.772 * (U - 0.5)
+                // Mapping: Y=G, V=R, U=B
+
+                matrix = new float[]
+                {
+                    1.402f, 1f, 0f, 0f, -0.701f, // R = 1*G + 1.402*R - offset
+                    -0.714f, 1f, -0.344f, 0f, 0.529f, // G = 1*G - ...
+                    0f, 1f, 1.772f, 0f, -0.886f, // B = 1*G + 1.772*B - offset
+                    0, 0, 0, 1, 0
+                };
+                break;
+
+            case ColorMode.RescueGreenVivid:
+                // Tuned for Sharpness & Contrast (User reported foggy/washed out image)
+                // Contrast: 1.35 (Boosted)
+                // Saturation: 0.65 (Slightly relaxed constraint)
+                // Brightness Offset: -0.2 (Darken shadows to remove fog)
+                
+                // Base calculation (Contrast 1.35, Sat 0.65)
+                // R = 1.35*G + (1.35*1.402*0.65)*(R-0.5) = 1.35G + 1.23R - 0.615
+                // B = 1.35*G + (1.35*1.772*0.65)*(B-0.5) = 1.35G + 1.55B - 0.775
+                // G = 1.35*G - (1.35*0.344*0.65)*(B-0.5) - (1.35*0.714*0.65)*(R-0.5)
+                //   = 1.35G - 0.30B - 0.63R - (-0.15 - 0.315 = -0.465) -> +0.465
+                
+                // Applying Brightness Offset of -0.2 to all
+                // R_offset = -0.615 - 0.2 = -0.815
+                // B_offset = -0.775 - 0.2 = -0.975
+                // G_offset = +0.465 - 0.2 = +0.265
+
+                matrix = new float[]
+                {
+                    1.23f, 1.35f, 0f, 0f, -0.815f,    // R
+                    -0.63f, 1.35f, -0.30f, 0f, 0.265f,  // G
+                    0f, 1.35f, 1.55f, 0f, -0.975f,    // B
                     0, 0, 0, 1, 0
                 };
                 break;
