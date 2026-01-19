@@ -34,7 +34,8 @@ public static class MauiProgram
         // サービス登録
         builder.Services.AddSidecarClientServices();
 
-        // ページ登録
+        // App と ページ登録
+        builder.Services.AddSingleton<App>();
         builder.Services.AddTransient<MainPage>();
 
 #if DEBUG

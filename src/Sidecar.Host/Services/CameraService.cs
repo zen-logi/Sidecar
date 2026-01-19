@@ -64,7 +64,8 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
             throw new InvalidOperationException("キャプチャは既に実行中です。");
         }
 
-        _capture = new VideoCapture(deviceIndex);
+        // DirectShowバックエンドを使用（色味の問題回避のため）
+        _capture = new VideoCapture(deviceIndex, VideoCaptureAPIs.DSHOW);
 
         if (!_capture.IsOpened())
         {

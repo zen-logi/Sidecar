@@ -2,82 +2,127 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:skia="clr-namespace:SkiaSharp.Views.Maui.Controls;assembly=SkiaSharp.Views.Maui.Controls"
-             xmlns:vm="clr-namespace:Sidecar.Client.ViewModels"
+             xmlns:viewModels="clr-namespace:Sidecar.Client.ViewModels"
              x:Class="Sidecar.Client.MainPage"
-             x:DataType="vm:MainPageViewModel"
-             Title="Sidecar Client">
+             x:DataType="viewModels:MainPageViewModel"
+             BackgroundColor="#121212">
 
-    <Grid RowDefinitions="Auto,*,Auto"
-          Padding="16"
-          BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#1E1E1E}">
+    <Grid>
+        <!-- 映像レイヤー -->
+        <skia:SKCanvasView x:Name="CanvasView"
+                           PaintSurface="OnCanvasViewPaintSurface"
+                           IgnorePixelScaling="True" />
 
-        <!-- 接続パネル -->
-        <Border Grid.Row="0"
-                Padding="16"
-                Margin="0,0,0,16"
-                StrokeShape="RoundRectangle 8"
-                Stroke="{AppThemeBinding Light=#E0E0E0, Dark=#3E3E3E}"
-                BackgroundColor="{AppThemeBinding Light=#F5F5F5, Dark=#2D2D2D}">
-            <VerticalStackLayout Spacing="12">
-                <Label Text="接続設定"
-                       FontSize="18"
-                       FontAttributes="Bold" />
+        <!-- 接続前UIレイヤー -->
+        <Grid IsVisible="{Binding IsConnected, Converter={StaticResource InvertedBoolConverter}}"
+              RowDefinitions="*,Auto,*"
+              BackgroundColor="#121212">
+            
+            <VerticalStackLayout Grid.Row="1" Spacing="24" HorizontalOptions="Center" WidthRequest="360">
+                <Label Text="Sidecar" 
+                       FontSize="48" 
+                       TextColor="White" 
+                       FontAttributes="Bold" 
+                       HorizontalTextAlignment="Center"
+                       FontFamily="OpenSansSemibold"/>
+                
+                <Label Text="Remote Display Client" 
+                       FontSize="16" 
+                       TextColor="#808080" 
+                       HorizontalTextAlignment="Center" 
+                       Margin="0,-12,0,32"
+                       CharacterSpacing="1"/>
 
-                <Grid ColumnDefinitions="*,120"
-                      ColumnSpacing="12">
-                    <Entry Grid.Column="0"
-                           Placeholder="ホストIPアドレス (例: 192.168.1.100)"
-                           Text="{Binding HostAddress}"
-                           IsEnabled="{Binding IsConnected, Converter={StaticResource InvertedBoolConverter}}"
-                           Keyboard="Url" />
+                <Border StrokeShape="RoundRectangle 16" 
+                        Stroke="Transparent" 
+                        BackgroundColor="#252525" 
+                        Padding="16,8">
+                    <Entry Placeholder="Host Address" 
+                           Text="{Binding HostAddress}" 
+                           TextColor="White" 
+                           PlaceholderColor="#666666" />
+                </Border>
+                
+                <Border StrokeShape="RoundRectangle 16" 
+                        Stroke="Transparent" 
+                        BackgroundColor="#252525" 
+                        Padding="16,8">
+                    <Entry Placeholder="Port" 
+                           Text="{Binding Port}" 
+                           Keyboard="Numeric" 
+                           TextColor="White" 
+                           PlaceholderColor="#666666" />
+                </Border>
 
-                    <Entry Grid.Column="1"
-                           Placeholder="ポート"
-                           Text="{Binding Port}"
-                           IsEnabled="{Binding IsConnected, Converter={StaticResource InvertedBoolConverter}}"
-                           Keyboard="Numeric" />
-                </Grid>
-
-                <Grid ColumnDefinitions="*,*"
-                      ColumnSpacing="12">
-                    <Button Grid.Column="0"
-                            Text="接続"
-                            Command="{Binding ConnectCommand}"
-                            BackgroundColor="#2196F3"
-                            TextColor="White" />
-
-                    <Button Grid.Column="1"
-                            Text="切断"
-                            Command="{Binding DisconnectCommand}"
-                            BackgroundColor="#F44336"
-                            TextColor="White" />
-                </Grid>
+                <Button Text="Connect" 
+                        Command="{Binding ConnectCommand}" 
+                        BackgroundColor="#007AFF" 
+                        TextColor="White" 
+                        CornerRadius="24" 
+                        HeightRequest="56" 
+                        FontAttributes="Bold"
+                        FontSize="16"
+                        IsEnabled="{Binding IsNotConnecting}">
+                    <Button.Shadow>
+                        <Shadow Brush="#007AFF" Offset="0,4" Radius="10" Opacity="0.3"/>
+                    </Button.Shadow>
+                </Button>
+                
+                <Label Text="{Binding StatusMessage}" 
+                       TextColor="#FF453A" 
+                       HorizontalTextAlignment="Center"
+                       FontSize="14"/>
             </VerticalStackLayout>
-        </Border>
+        </Grid>
 
-        <!-- 映像表示エリア -->
-        <Border Grid.Row="1"
-                StrokeShape="RoundRectangle 8"
-                Stroke="{AppThemeBinding Light=#E0E0E0, Dark=#3E3E3E}"
-                BackgroundColor="{AppThemeBinding Light=#000000, Dark=#121212}">
-            <skia:SKCanvasView x:Name="CanvasView"
-                               PaintSurface="OnCanvasViewPaintSurface" />
-        </Border>
+        <!-- 接続中オーバーレイUI (タップで表示切り替え) -->
+        <Grid IsVisible="{Binding IsConnected}" 
+              InputTransparent="False">
+            <Grid.GestureRecognizers>
+                <TapGestureRecognizer Tapped="OnOverlayTapped"/>
+            </Grid.GestureRecognizers>
+             
+            <!-- コントロールコンテナ -->
+            <Grid x:Name="ControlsOverlay" 
+                  Opacity="0" 
+                  InputTransparent="True" 
+                  RowDefinitions="Auto,*,Auto">
+                
+                <!-- ヘッダー -->
+                <Border Grid.Row="0" 
+                        BackgroundColor="#CC1C1C1E" 
+                        Padding="24,16" 
+                        StrokeThickness="0"
+                        VerticalOptions="Start">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="{Binding StatusMessage}" 
+                               TextColor="White" 
+                               FontSize="14"
+                               VerticalOptions="Center"/>
+                        <HorizontalStackLayout Grid.Column="1" Spacing="8">
+                            <BoxView Color="#32D74B" WidthRequest="8" HeightRequest="8" CornerRadius="4" VerticalOptions="Center"/>
+                            <Label Text="Live" TextColor="#32D74B" FontSize="12" FontAttributes="Bold" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+                    </Grid>
+                </Border>
 
-        <!-- ステータスバー -->
-        <Border Grid.Row="2"
-                Padding="12,8"
-                Margin="0,16,0,0"
-                StrokeShape="RoundRectangle 4"
-                Stroke="{AppThemeBinding Light=#E0E0E0, Dark=#3E3E3E}"
-                BackgroundColor="{AppThemeBinding Light=#F5F5F5, Dark=#2D2D2D}">
-            <HorizontalStackLayout Spacing="8">
-                <Label Text="ステータス:"
-                       VerticalOptions="Center" />
-                <Label Text="{Binding StatusMessage}"
-                       VerticalOptions="Center"
-                       FontAttributes="Bold" />
-            </HorizontalStackLayout>
-        </Border>
+                <!-- フッター -->
+                <Border Grid.Row="2" 
+                        BackgroundColor="#CC1C1C1E" 
+                        Padding="24,32" 
+                        StrokeThickness="0"
+                        VerticalOptions="End">
+                    <Button Text="Disconnect" 
+                            Command="{Binding DisconnectCommand}" 
+                            BackgroundColor="#FF453A" 
+                            TextColor="White" 
+                            CornerRadius="24"
+                            HeightRequest="48"
+                            WidthRequest="160"
+                            HorizontalOptions="Center"
+                            FontAttributes="Bold"/>
+                </Border>
+            </Grid>
+        </Grid>
     </Grid>
 </ContentPage>

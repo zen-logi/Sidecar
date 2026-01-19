@@ -49,7 +49,7 @@ public sealed class StreamClient : IStreamClient
         {
             _client = new TcpClient
             {
-                NoDelay = true, // Nagleアルゴリズム無効化（低遅延のため必須）
+                NoDelay = true,
             };
 
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -218,6 +218,10 @@ public sealed class StreamClient : IStreamClient
         {
             // 接続終了
         }
+        catch (Exception)
+        {
+             State = ConnectionState.Error;
+        }
     }
 
     /// <summary>
@@ -263,10 +267,10 @@ public sealed class StreamClient : IStreamClient
 
             // 最新フレームのみ保持（Fast-Forward: 古いフレームは破棄）
             Volatile.Write(ref _latestFrame, jpegData);
-
+            
             frameNumber++;
             var frame = new FrameData(jpegData, DateTime.UtcNow, frameNumber);
-
+            
             // イベント発火（スレッドセーフ）
             var handler = FrameReceived;
             handler?.Invoke(this, new FrameEventArgs(frame));
