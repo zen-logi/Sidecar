@@ -1,19 +1,20 @@
 # Sidecar
 
-自宅LAN内で、ゲーム機などの映像を「遅延ゼロ」で共有するためのサイドカー・アプリケーション。
+自宅LAN内で、ゲーム機などの映像を共有するためのサイドカー・アプリケーション。
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![GitHub Release](https://img.shields.io/github/v/release/zen-logi/Sidecar?include_prereleases)](https://github.com/zen-logi/Sidecar/releases)
 
+![Screenshot](docs/screenshot.png)
+
 ## 概要
 
-Sidecar は、LAN内でキャプチャデバイス（ゲームキャプチャボードなど）の映像を低遅延で配信・視聴するためのオープンソースアプリケーションです。
+Sidecar は、LAN内でキャプチャデバイス（ゲームキャプチャボードなど）の映像を配信・視聴するためのオープンソースアプリケーションです。
 
 ### 主な特徴
 
-- 🚀 **超低遅延**: Nagleアルゴリズム無効化、最新フレームのみ保持する設計
-- 🎨 **高度な色補正**: 補正プリセット（キャプチャカードの色被り救済など）とマニュアル調整（彩度・コントラスト・明るさ）機能
+- 🎨 **色補正**: 補正プリセット（キャプチャカードの色被り救済など）とマニュアル調整（彩度・コントラスト・明るさ）
 - 🌍 **クロスプラットフォーム**: Windows, macOS, iOS, Android 対応（クライアント側）
 - 💡 **シンプル**: MJPEG over TCP による軽量なストリーミング
 - 💾 **永続化**: ウィンドウ位置や接続先、色設定を自動保存

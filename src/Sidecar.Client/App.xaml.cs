@@ -29,7 +29,10 @@ public partial class App : Application
     protected override Window CreateWindow(IActivationState? activationState)
     {
         var mainPage = _serviceProvider.GetRequiredService<MainPage>();
-        var window = new Window(new NavigationPage(mainPage));
+        var window = new Window(new NavigationPage(mainPage))
+        {
+            Title = "Sidecar"
+        };
 
         // Restore window state (Windows only)
 #if WINDOWS
