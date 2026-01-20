@@ -47,12 +47,13 @@ Sidecar/
 
 [Releases ページ](https://github.com/zen-logi/Sidecar/releases) から最新のビルドをダウンロードできます。
 
-### ビルド済みバイナリ
+| ファイル | 説明 |
+|----------|------|
+| `Sidecar.Client-Setup.exe` | Client インストーラー（視聴側） |
+| `Sidecar.Host-win-x64.zip` | Host 単体（配信側） |
 
-| プラットフォーム | ダウンロード |
-|------------------|--------------|
-| Windows (Host) | `Sidecar.Host-win-x64.zip` |
-| Windows (Client) | `Sidecar.Client-win-x64.zip` |
+**Client**: インストーラーをダブルクリックで実行
+**Host**: ZIPを解凍して `Sidecar.Host.exe` を実行
 
 ## セットアップ手順
 
