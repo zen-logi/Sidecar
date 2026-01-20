@@ -19,7 +19,11 @@ var services = new ServiceCollection();
 // ロギング設定
 services.AddLogging(builder =>
 {
+#if DEBUG
+    _ = builder.SetMinimumLevel(LogLevel.Debug);
+#else
     _ = builder.SetMinimumLevel(LogLevel.Information);
+#endif
     _ = builder.AddConsole(options => options.FormatterName = "simple");
 });
 
