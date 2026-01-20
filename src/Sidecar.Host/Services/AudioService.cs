@@ -168,44 +168,64 @@ public sealed class AudioService : IAudioService
     }
 
     /// <inheritdoc/>
-    public Task StopCaptureAsync(CancellationToken cancellationToken = default)
+    public async Task StopCaptureAsync(CancellationToken cancellationToken = default)
     {
         if (_waveIn is not null)
         {
-            _waveIn.StopRecording();
-
-            if (_waveIn is WasapiCapture wasapiCapture)
+            await Task.Run(() =>
             {
-                wasapiCapture.DataAvailable -= OnDataAvailable;
-                wasapiCapture.RecordingStopped -= OnRecordingStopped;
-            }
-            else if (_waveIn is WasapiLoopbackCapture loopbackCapture)
-            {
-                loopbackCapture.DataAvailable -= OnDataAvailable;
-                loopbackCapture.RecordingStopped -= OnRecordingStopped;
-            }
+                try
+                {
+                    _waveIn.StopRecording();
 
-            _waveIn.Dispose();
+                    if (_waveIn is WasapiCapture wasapiCapture)
+                    {
+                        wasapiCapture.DataAvailable -= OnDataAvailable;
+                        wasapiCapture.RecordingStopped -= OnRecordingStopped;
+                    }
+                    else if (_waveIn is WasapiLoopbackCapture loopbackCapture)
+                    {
+                        loopbackCapture.DataAvailable -= OnDataAvailable;
+                        loopbackCapture.RecordingStopped -= OnRecordingStopped;
+                    }
+
+                    _waveIn.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "NAudio停止中の例外");
+                }
+            }, cancellationToken);
+            
             _waveIn = null;
         }
 
 #if DEBUG
         if (_statsCts != null)
         {
-            _statsCts.Cancel();
-            _statsTask?.Wait(TimeSpan.FromSeconds(1));
+            await _statsCts.CancelAsync();
+            if (_statsTask != null)
+            {
+                try
+                {
+                    await _statsTask.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
+                }
+                catch (OperationCanceledException) { }
+            }
             _statsCts.Dispose();
             _statsCts = null;
             _statsTask = null;
         }
 #endif
 
-        (_conversionStream as IDisposable)?.Dispose();
-        _conversionStream = null;
-        _captureProvider = null;
+        await Task.Run(() =>
+        {
+            (_conversionStream as IDisposable)?.Dispose();
+            _conversionStream = null;
+            _captureProvider = null;
+        }, cancellationToken);
 
         _logger.LogInformation("音声キャプチャを停止");
-        return Task.CompletedTask;
     }
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)

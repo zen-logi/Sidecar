@@ -166,10 +166,28 @@ catch (Exception ex)
 finally
 {
     Console.WriteLine("\nサーバーを停止中...");
-    await audioStreamServer.StopAsync(CancellationToken.None);
-    await audioService.StopCaptureAsync(CancellationToken.None);
-    await streamServer.StopAsync(CancellationToken.None);
-    await cameraService.StopCaptureAsync(CancellationToken.None);
+    
+    // タイムアウト付きの停止処理
+    using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+    var shutdownToken = shutdownCts.Token;
+
+    async Task StopService(string name, Func<CancellationToken, Task> stopAction)
+    {
+        try
+        {
+            await stopAction(shutdownToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "{Name} 停止中のエラー", name);
+        }
+    }
+
+    await StopService("音声ストリーミング", audioStreamServer.StopAsync);
+    await StopService("音声キャプチャ", audioService.StopCaptureAsync);
+    await StopService("ビデオストリーミング", streamServer.StopAsync);
+    await StopService("カメラキャプチャ", cameraService.StopCaptureAsync);
+
     Console.WriteLine("終了");
 }
 
