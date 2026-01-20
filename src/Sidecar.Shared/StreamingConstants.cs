@@ -44,4 +44,36 @@ public static class StreamingConstants
     /// 接続確立時の最大待機時間（ミリ秒）。
     /// </summary>
     public const int ConnectionTimeoutMs = 10000;
+
+    // ==================== Audio Streaming ====================
+
+    /// <summary>
+    /// デフォルトの音声ストリーミングポート番号。
+    /// </summary>
+    public const int DefaultAudioPort = 8555;
+
+    /// <summary>
+    /// 音声サンプリングレート（Hz）。
+    /// </summary>
+    public const int AudioSampleRate = 48000;
+
+    /// <summary>
+    /// 音声チャンネル数。
+    /// </summary>
+    public const int AudioChannels = 2;
+
+    /// <summary>
+    /// 音声ビット深度（bits per sample）。
+    /// </summary>
+    public const int AudioBitsPerSample = 16;
+
+    /// <summary>
+    /// 音声バッファサイズ（ミリ秒）。低遅延のため20msを推奨。
+    /// </summary>
+    public const int AudioBufferMs = 20;
+
+    /// <summary>
+    /// 音声受信バッファサイズ（バイト）。
+    /// </summary>
+    public const int AudioReceiveBufferSize = 64 * 1024; // 64KB
 }

@@ -22,6 +22,8 @@ public static class ClientServiceExtensions
     public static IServiceCollection AddSidecarClientServices(this IServiceCollection services)
     {
         services.AddSingleton<IStreamClient, StreamClient>();
+        services.AddSingleton<IAudioClient, AudioClient>();
+        services.AddSingleton<IAudioPlayerService, AudioPlayerService>();
         services.AddTransient<MainPageViewModel>();
 
         return services;

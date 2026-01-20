@@ -87,6 +87,8 @@ public enum ColorMode
 public partial class MainPageViewModel : ObservableObject, IDisposable
 {
     private readonly IStreamClient _streamClient;
+    private readonly IAudioClient _audioClient;
+    private readonly IAudioPlayerService _audioPlayer;
     private CancellationTokenSource? _connectionTokenSource;
     private bool _disposed;
 
@@ -142,10 +144,14 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
         }
     }
 
-    public MainPageViewModel(IStreamClient streamClient)
+    public MainPageViewModel(IStreamClient streamClient, IAudioClient audioClient, IAudioPlayerService audioPlayer)
     {
         _streamClient = streamClient ?? throw new ArgumentNullException(nameof(streamClient));
+        _audioClient = audioClient ?? throw new ArgumentNullException(nameof(audioClient));
+        _audioPlayer = audioPlayer ?? throw new ArgumentNullException(nameof(audioPlayer));
+
         _streamClient.FrameReceived += OnFrameReceived;
+        _audioClient.AudioReceived += OnAudioReceived;
         
         // Load saved settings
         HostAddress = Preferences.Default.Get(PrefHostAddress, string.Empty);
@@ -226,6 +232,38 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// 音量（0.0 〜 1.0）。
+    /// </summary>
+    public float Volume
+    {
+        get => _audioPlayer.Volume;
+        set
+        {
+            _audioPlayer.Volume = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// ミュート状態。
+    /// </summary>
+    public bool IsMuted
+    {
+        get => _audioPlayer.IsMuted;
+        set
+        {
+            _audioPlayer.IsMuted = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(MuteIcon));
+        }
+    }
+
+    /// <summary>
+    /// ミュートアイコン名。
+    /// </summary>
+    public string MuteIcon => IsMuted ? "volume_off.png" : "volume_up.png";
+
+    /// <summary>
     /// 最新フレームを取得したときに発生するイベント。
     /// </summary>
     public event EventHandler<byte[]>? FrameUpdated;
@@ -254,10 +292,18 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
         try
         {
             _connectionTokenSource = new CancellationTokenSource();
-            await _streamClient.ConnectAsync(HostAddress, portNumber, _connectionTokenSource.Token);
+            
+            // ビデオとオーディオを並行して接続
+            var videoTask = _streamClient.ConnectAsync(HostAddress, portNumber, _connectionTokenSource.Token);
+            var audioTask = _audioClient.ConnectAsync(HostAddress, portNumber + 1, _connectionTokenSource.Token);
+
+            await Task.WhenAll(videoTask, audioTask);
+
+            // 音声再生開始
+            _audioPlayer.Start(StreamingConstants.AudioSampleRate, StreamingConstants.AudioChannels);
 
             IsConnected = true;
-            StatusMessage = $"{HostAddress}:{portNumber} に接続済み";
+            StatusMessage = $"{HostAddress} に接続済み (Port: {portNumber}, {portNumber + 1})";
         }
         catch (OperationCanceledException)
         {
@@ -273,6 +319,12 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
         }
     }
 
+    [RelayCommand]
+    private void ToggleMute()
+    {
+        IsMuted = !IsMuted;
+    }
+
     /// <summary>
     /// 接続を切断します。
     /// </summary>
@@ -281,6 +333,8 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     {
         _connectionTokenSource?.Cancel();
         _streamClient.Disconnect();
+        _audioClient.Disconnect();
+        _audioPlayer.Stop();
 
         IsConnected = false;
         StatusMessage = "切断済み";
@@ -312,6 +366,14 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// </summary>
     /// <returns>JPEG圧縮されたフレームデータ。フレームがない場合はnull。</returns>
     public byte[]? GetLatestFrame() => _streamClient.GetLatestFrame();
+
+    /// <summary>
+    /// 音声受信時のイベントハンドラ。
+    /// </summary>
+    private void OnAudioReceived(object? sender, AudioEventArgs e)
+    {
+        _audioPlayer.AddSamples(e.Audio.PcmData);
+    }
 
     /// <summary>
     /// フレーム受信時のイベントハンドラ。
@@ -350,6 +412,8 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
         }
 
         _streamClient.FrameReceived -= OnFrameReceived;
+        _audioClient.AudioReceived -= OnAudioReceived;
+        _audioPlayer.Dispose();
         _connectionTokenSource?.Dispose();
         _disposed = true;
 
