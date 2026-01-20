@@ -67,7 +67,7 @@ public sealed class CameraService : ICameraService, IDisposable
 
         if (characteristics == null)
         {
-             throw new InvalidOperationException("No valid characteristics found for device.");
+             throw new InvalidOperationException("デバイスの有効な特性が見つからない");
         }
 
         // コールバックで使用するために保持
@@ -139,7 +139,7 @@ public sealed class CameraService : ICameraService, IDisposable
             _captureDevice.Dispose();
             _captureDevice = null;
         }
-        _logger.LogInformation("Stopped capture.");
+        _logger.LogInformation("キャプチャを停止");
     }
 
     public byte[]? GetLatestFrame() => Volatile.Read(ref _latestFrame);

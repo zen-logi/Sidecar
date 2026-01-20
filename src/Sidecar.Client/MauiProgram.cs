@@ -10,14 +10,14 @@ using SkiaSharp.Views.Maui.Controls.Hosting;
 namespace Sidecar.Client;
 
 /// <summary>
-/// MAUIアプリケーションのエントリーポイント。
+/// MAUIアプリケーションのエントリーポイント
 /// </summary>
 public static class MauiProgram
 {
     /// <summary>
-    /// MAUIアプリケーションを作成します。
+    /// MAUIアプリケーションを作成
     /// </summary>
-    /// <returns>構成されたMauiApp。</returns>
+    /// <returns>構成されたMauiApp</returns>
     public static MauiApp CreateMauiApp()
     {
         var builder = MauiApp.CreateBuilder();

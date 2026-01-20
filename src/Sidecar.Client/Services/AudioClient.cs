@@ -38,7 +38,7 @@ public sealed class AudioClient : IAudioClient
 
         if (State == ConnectionState.Connected || State == ConnectionState.Connecting)
         {
-            throw new InvalidOperationException("既に接続中です。");
+            throw new InvalidOperationException("既に接続中");
         }
 
         State = ConnectionState.Connecting;
@@ -132,7 +132,7 @@ public sealed class AudioClient : IAudioClient
         }
         catch (OperationCanceledException)
         {
-            // 正常
+            // 正常終了
         }
         catch (Exception)
         {

@@ -14,13 +14,13 @@ using Sidecar.Shared.Models;
 namespace Sidecar.Host.Services;
 
 /// <summary>
-/// TCPベースのMJPEGストリーミングサーバー。
+/// TCPベースのMJPEGストリーミングサーバー
 /// </summary>
 /// <remarks>
-/// <see cref="StreamServer"/> クラスの新しいインスタンスを初期化します。
+/// <see cref="StreamServer"/> クラスの新しいインスタンスを初期化
 /// </remarks>
-/// <param name="cameraService">カメラサービス。</param>
-/// <param name="logger">ロガー。</param>
+/// <param name="cameraService">カメラサービス</param>
+/// <param name="logger">ロガー</param>
 public sealed class StreamServer(ICameraService cameraService, ILogger<StreamServer> logger) : IStreamServer
 {
     private readonly ICameraService _cameraService = cameraService ?? throw new ArgumentNullException(nameof(cameraService));
@@ -44,7 +44,7 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
 
         if (IsRunning)
         {
-            throw new InvalidOperationException("サーバーは既に実行中です。");
+            throw new InvalidOperationException("サーバーは既に実行中");
         }
 
         _listener = new TcpListener(IPAddress.Any, port);
@@ -57,7 +57,7 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
 
         _acceptTask = AcceptClientsAsync(_serverTokenSource.Token);
 
-        _logger.LogInformation("ストリーミングサーバーがポート {Port} で開始しました", port);
+        _logger.LogInformation("ストリーミングサーバーをポート {Port} で開始", port);
 
         return Task.CompletedTask;
     }
@@ -117,11 +117,11 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
         _listener = null;
         _acceptTask = null;
 
-        _logger.LogInformation("ストリーミングサーバーが停止しました");
+        _logger.LogInformation("ストリーミングサーバーを停止");
     }
 
     /// <summary>
-    /// クライアント接続を受け付けるループ。
+    /// クライアント接続を受け付けるループ
     /// </summary>
     private async Task AcceptClientsAsync(CancellationToken cancellationToken)
     {
@@ -154,7 +154,7 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
     }
 
     /// <summary>
-    /// クライアントのハンドシェイクを処理します。
+    /// クライアントのハンドシェイクを処理
     /// </summary>
     private async Task HandleClientAsync(Guid clientId, TcpClient client, CancellationToken cancellationToken)
     {
@@ -198,7 +198,7 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
     }
 
     /// <summary>
-    /// フレーム受信時にすべてのクライアントへブロードキャストします。
+    /// フレーム受信時にすべてのクライアントへブロードキャスト
     /// </summary>
     private void OnFrameAvailable(object? sender, FrameEventArgs e)
     {
@@ -249,7 +249,7 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
     }
 
     /// <summary>
-    /// リソースを解放します。
+    /// リソースを解放
     /// </summary>
     public void Dispose()
     {

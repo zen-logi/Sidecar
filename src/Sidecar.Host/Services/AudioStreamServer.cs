@@ -49,7 +49,7 @@ public sealed class AudioStreamServer : IAudioStreamServer
 
         if (IsRunning)
         {
-            throw new InvalidOperationException("音声サーバーは既に実行中")
+            throw new InvalidOperationException("音声サーバーは既に実行中");
         }
 
         _listener = new TcpListener(IPAddress.Any, port);

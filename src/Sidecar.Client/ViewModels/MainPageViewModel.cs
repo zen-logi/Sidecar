@@ -12,17 +12,17 @@ using Sidecar.Shared.Models;
 namespace Sidecar.Client.ViewModels;
 
 /// <summary>
-/// 色補正モード。
+/// 色補正モード
 /// </summary>
 public enum ColorMode
 {
     /// <summary>
-    /// デフォルト（補正なし）。
+    /// デフォルト（補正なし）
     /// </summary>
     Default,
 
     /// <summary>
-    /// 赤と青を入れ替え (BGR -> RGB)。
+    /// 赤と青を入れ替え (BGR -> RGB)
     /// </summary>
     SwapRedBlue,
 
@@ -35,12 +35,12 @@ public enum ColorMode
     BGR,
 
     /// <summary>
-    /// SDRディスプレイ向け補正。
+    /// SDRディスプレイ向け補正
     /// </summary>
     SDRDisplayLike,
 
     /// <summary>
-    /// グレースケール。
+    /// グレースケール
     /// </summary>
     Grayscale,
 
@@ -82,7 +82,7 @@ public enum ColorMode
 
 
 /// <summary>
-/// MainPageのViewModel。
+/// MainPageのViewModel
 /// </summary>
 public partial class MainPageViewModel : ObservableObject, IDisposable
 {
@@ -100,7 +100,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     private const string PrefColorMode = "ColorMode";
 
     /// <summary>
-    /// 色補正モードの選択肢。
+    /// 色補正モードの選択肢
     /// </summary>
     public class ColorModeOption
     {
@@ -109,7 +109,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// 利用可能な色補正モードのリスト。
+    /// 利用可能な色補正モードのリスト
     /// </summary>
     public IReadOnlyList<ColorModeOption> ColorModeOptions { get; } = new List<ColorModeOption>
     {
@@ -131,7 +131,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     };
 
     /// <summary>
-    /// 選択された色補正モード。
+    /// 選択された色補正モード
     /// </summary>
     [ObservableProperty]
     public partial ColorModeOption SelectedColorModeOption { get; set; }
@@ -164,7 +164,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// 接続先ホストアドレス。
+    /// 接続先ホストアドレス
     /// </summary>
     [ObservableProperty]
     public partial string HostAddress { get; set; } = string.Empty;
@@ -175,31 +175,28 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// ポート番号。
+    /// ポート番号
     /// </summary>
     [ObservableProperty]
     public partial string Port { get; set; } = StreamingConstants.DefaultPort.ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>
-    /// 接続状態メッセージ。
-    /// </summary>
     [ObservableProperty]
     public partial string StatusMessage { get; set; } = "切断済み";
 
     /// <summary>
-    /// 接続中かどうか。
+    /// 接続中
     /// </summary>
     [ObservableProperty]
     public partial bool IsConnected { get; set; }
 
     /// <summary>
-    /// 接続処理中かどうか。
+    /// 接続処理中
     /// </summary>
     [ObservableProperty]
     public partial bool IsConnecting { get; set; }
 
     /// <summary>
-    /// 彩度。
+    /// 彩度
     /// </summary>
     [ObservableProperty]
     private float _saturation = 1.0f;
@@ -210,7 +207,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// コントラスト。
+    /// コントラスト
     /// </summary>
     [ObservableProperty]
     private float _contrast = 1.0f;
@@ -221,7 +218,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// 明るさ。
+    /// 明るさ
     /// </summary>
     [ObservableProperty]
     private float _brightness = 0.0f;
@@ -232,7 +229,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// 音量（0.0 〜 1.0）。
+    /// 音量 (0.0 〜 1.0)
     /// </summary>
     public float Volume
     {
@@ -245,7 +242,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// ミュート状態。
+    /// ミュート状態
     /// </summary>
     public bool IsMuted
     {
@@ -259,12 +256,12 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// ミュートアイコン名。
+    /// ミュートアイコン名
     /// </summary>
     public string MuteIcon => IsMuted ? "volume_off.png" : "volume_up.png";
 
     /// <summary>
-    /// 最新フレームを取得したときに発生するイベント。
+    /// 最新フレームを取得したときに発生するイベント
     /// </summary>
     public event EventHandler<byte[]>? FrameUpdated;
 
@@ -310,7 +307,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
             }
             catch (Exception)
             {
-                // 音声接続失敗。ログを出力して続行
+                // 音声接続失敗 ログを出力して続行
             }
 
             IsConnected = true;
@@ -361,7 +358,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// スライダーの値をデフォルトに戻します。
+    /// スライダーの値をデフォルトにリセット
     /// </summary>
     [RelayCommand]
     private void ResetSliders()
@@ -372,23 +369,23 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// 接続可能かどうかを取得します。
+    /// 接続可能かどうかを取得
     /// </summary>
     private bool CanConnect() => !IsConnected && !IsConnecting;
 
     /// <summary>
-    /// 切断可能かどうかを取得します。
+    /// 切断可能かどうかを取得
     /// </summary>
     private bool CanDisconnect() => IsConnected;
 
     /// <summary>
-    /// 最新のフレームを取得します。
+    /// 最新のフレームを取得
     /// </summary>
-    /// <returns>JPEG圧縮されたフレームデータ。フレームがない場合はnull。</returns>
+    /// <returns>JPEG圧縮されたフレームデータ フレームがない場合はnull</returns>
     public byte[]? GetLatestFrame() => _streamClient.GetLatestFrame();
 
     /// <summary>
-    /// 音声受信時のイベントハンドラ。
+    /// 音声受信時のイベントハンドラ
     /// </summary>
     private void OnAudioReceived(object? sender, AudioEventArgs e)
     {
@@ -396,7 +393,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// フレーム受信時のイベントハンドラ。
+    /// フレーム受信時のイベントハンドラ
     /// </summary>
     private void OnFrameReceived(object? sender, FrameEventArgs e)
     {
@@ -405,7 +402,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// IsConnected プロパティ変更時に呼び出されます。
+    /// IsConnected プロパティ変更時に呼び出し
     /// </summary>
     partial void OnIsConnectedChanged(bool value)
     {
@@ -414,7 +411,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// IsConnecting プロパティ変更時に呼び出されます。
+    /// IsConnecting プロパティ変更時に呼び出し
     /// </summary>
     partial void OnIsConnectingChanged(bool value)
     {
@@ -422,7 +419,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// リソースを解放します。
+    /// リソースを解放
     /// </summary>
     public void Dispose()
     {

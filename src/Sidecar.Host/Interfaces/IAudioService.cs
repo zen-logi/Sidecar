@@ -14,15 +14,15 @@ public interface IAudioService : IDisposable
     /// <summary>
     /// 利用可能な音声デバイスを列挙
     /// </summary>
-    /// <returns>利用可能な音声デバイスのリスト。</returns>
+    /// <returns>利用可能な音声デバイスのリスト</returns>
     IReadOnlyList<AudioDevice> GetAvailableDevices();
 
     /// <summary>
     /// 指定した音声デバイスでキャプチャを開始
     /// </summary>
-    /// <param name="deviceId">使用する音声デバイスのID。</param>
-    /// <param name="cancellationToken">キャンセルトークン。</param>
-    /// <returns>非同期操作を表すタスク。</returns>
+    /// <param name="deviceId">使用する音声デバイスのID</param>
+    /// <param name="cancellationToken">キャンセルトークン</param>
+    /// <returns>非同期操作を表すタスク</returns>
     Task StartCaptureAsync(string deviceId, CancellationToken cancellationToken = default);
 
     /// <summary>

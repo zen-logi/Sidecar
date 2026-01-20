@@ -12,8 +12,8 @@ namespace Sidecar.Shared.Models;
 public sealed record CameraDevice(int Index, string Name)
 {
     /// <summary>
-    /// デバイス情報を文字列として取得します。
+    /// デバイス情報を文字列として取得
     /// </summary>
-    /// <returns>デバイス情報の文字列表現。</returns>
+    /// <returns>デバイス情報の文字列表現</returns>
     public override string ToString() => Name;
 }

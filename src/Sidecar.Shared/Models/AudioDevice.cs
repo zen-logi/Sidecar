@@ -10,22 +10,22 @@ namespace Sidecar.Shared.Models;
 public enum AudioDeviceType
 {
     /// <summary>
-    /// キャプチャボード (WASAPI キャプチャ)。
+    /// キャプチャボード (WASAPI キャプチャ)
     /// </summary>
     CaptureBoard,
 
     /// <summary>
-    /// システム音声 (WASAPI Loopback)。
+    /// システム音声 (WASAPI Loopback)
     /// </summary>
     SystemAudio,
 
     /// <summary>
-    /// マイク入力。
+    /// マイク入力
     /// </summary>
     Microphone,
 
     /// <summary>
-    /// マイク + キャプチャボード/システム音声のミックス。
+    /// マイク + キャプチャボード/システム音声のミックス
     /// </summary>
     Mixed,
 }

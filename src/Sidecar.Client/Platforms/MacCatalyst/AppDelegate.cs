@@ -7,14 +7,14 @@ using Foundation;
 namespace Sidecar.Client;
 
 /// <summary>
-/// Mac Catalystアプリケーションデリゲート。
+/// Mac Catalystアプリケーションデリゲート
 /// </summary>
 [Register("AppDelegate")]
 public class AppDelegate : MauiUIApplicationDelegate
 {
     /// <summary>
-    /// MAUIアプリケーションを作成します。
+    /// MAUIアプリケーションを作成
     /// </summary>
-    /// <returns>MAUIアプリケーション。</returns>
+    /// <returns>MAUIアプリケーション</returns>
     protected override MauiApp CreateMauiApp() => MauiProgram.CreateMauiApp();
 }

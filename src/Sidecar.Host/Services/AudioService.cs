@@ -81,7 +81,7 @@ public sealed class AudioService : IAudioService
     {
         if (_waveIn is not null)
         {
-            throw new InvalidOperationException("既にキャプチャ中")
+            throw new InvalidOperationException("既にキャプチャ中");
         }
 
         // ターゲットフォーマット: 48kHz, 16bit, Stereo

@@ -5,9 +5,9 @@
 namespace Sidecar.Shared.Models;
 
 /// <summary>
-/// フレームデータを表すモデルクラス。
+/// フレームデータを表すモデルクラス
 /// </summary>
-/// <param name="JpegData">JPEG圧縮されたフレームデータ。</param>
-/// <param name="Timestamp">フレームのタイムスタンプ。</param>
-/// <param name="FrameNumber">フレーム番号。</param>
+/// <param name="JpegData">JPEG圧縮されたフレームデータ</param>
+/// <param name="Timestamp">フレームのタイムスタンプ</param>
+/// <param name="FrameNumber">フレーム番号</param>
 public sealed record FrameData(byte[] JpegData, DateTime Timestamp, long FrameNumber);

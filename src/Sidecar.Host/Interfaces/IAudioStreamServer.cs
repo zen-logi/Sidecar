@@ -10,11 +10,11 @@ namespace Sidecar.Host.Interfaces;
 public interface IAudioStreamServer : IDisposable
 {
     /// <summary>
-    /// サーバーを開始します。
+    /// サーバーを開始
     /// </summary>
-    /// <param name="port">待ち受けポート番号。</param>
-    /// <param name="cancellationToken">キャンセルトークン。</param>
-    /// <returns>非同期操作を表すタスク。</returns>
+    /// <param name="port">待ち受けポート番号</param>
+    /// <param name="cancellationToken">キャンセルトークン</param>
+    /// <returns>非同期操作を表すタスク</returns>
     Task StartAsync(int port, CancellationToken cancellationToken = default);
 
     /// <summary>
