@@ -2,6 +2,7 @@
 // Copyright (c) Sidecar. All rights reserved.
 // </copyright>
 
+using System.IO;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -239,15 +240,16 @@ public sealed class AudioService : IAudioService
             Interlocked.Add(ref _totalBytesCaptured, e.BytesRecorded);
 
             // ターゲットフォーマットへ変換して読み取り (可能な限り多くのデータを取得)
-            int totalRead = 0;
+            using var ms = new MemoryStream();
             int read;
-            // 少ないデータ量でも確実に読み取るため、残響などを考慮しループを継続
             while ((read = _conversionStream.Read(_conversionBuffer, 0, _conversionBuffer.Length)) > 0)
             {
-                totalRead += read;
-                var pcmData = new byte[read];
-                Array.Copy(_conversionBuffer, 0, pcmData, 0, read);
+                ms.Write(_conversionBuffer, 0, read);
+            }
 
+            if (ms.Length > 0)
+            {
+                var pcmData = ms.ToArray();
                 var audioData = new AudioData(
                     pcmData,
                     StreamingConstants.AudioSampleRate,
@@ -255,10 +257,10 @@ public sealed class AudioService : IAudioService
                     DateTime.UtcNow.Ticks);
 
                 AudioAvailable?.Invoke(this, new AudioEventArgs(audioData));
+                Interlocked.Add(ref _totalBytesConverted, pcmData.Length);
             }
-            Interlocked.Add(ref _totalBytesConverted, totalRead);
 
-            if (totalRead == 0 && e.BytesRecorded > 0)
+            if (ms.Length == 0 && e.BytesRecorded > 0)
             {
                 // リサンプラーがデータを溜めている可能性があるため警告は最小限に
                 _logger.LogTrace("音声変換出力なし: 入力 {InputBytes} バイト, バッファ残量 {BufferedBytes} バイト", 
