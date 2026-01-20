@@ -1,11 +1,10 @@
-// <copyright file="StreamServer.cs" company="Sidecar">
+// <copyright file="AudioStreamServer.cs" company="Sidecar">
 // Copyright (c) Sidecar. All rights reserved.
 // </copyright>
 
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Sidecar.Host.Interfaces;
@@ -15,44 +14,55 @@ using Sidecar.Shared.Models;
 namespace Sidecar.Host.Services;
 
 /// <summary>
-/// TCPベースのMJPEGストリーミングサーバー
+/// TCPベースの音声ストリーミングサーバー
 /// </summary>
-/// <remarks>
-/// <see cref="StreamServer"/> クラスの新しいインスタンスを初期化
-/// </remarks>
-/// <param name="cameraService">カメラサービス</param>
-/// <param name="logger">ロガー</param>
-public sealed class StreamServer(ICameraService cameraService, ILogger<StreamServer> logger) : IStreamServer
+public sealed class AudioStreamServer : IAudioStreamServer
 {
-    private readonly ICameraService _cameraService = cameraService ?? throw new ArgumentNullException(nameof(cameraService));
-    private readonly ILogger<StreamServer> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IAudioService _audioService;
+    private readonly ILogger<AudioStreamServer> _logger;
     private readonly ConcurrentDictionary<Guid, TcpClient> _clients = new();
     private TcpListener? _listener;
     private CancellationTokenSource? _serverTokenSource;
     private Task? _acceptTask;
     private Task? _broadcastTask;
     private readonly Channel<byte[]> _broadcastChannel = Channel.CreateBounded<byte[]>(
-        new BoundedChannelOptions(StreamingConstants.VideoQueueLimit) 
+        new BoundedChannelOptions(StreamingConstants.AudioQueueLimit) 
         { 
             FullMode = BoundedChannelFullMode.DropOldest, 
             SingleReader = true 
         });
+    private long _totalBytesSent;
+    private long _totalPacketsSent;
     private bool _disposed;
+#if DEBUG
+    private Task? _statsTask;
+#endif
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
     public int ConnectedClientCount => _clients.Count;
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
     public bool IsRunning => _acceptTask is not null && !_acceptTask.IsCompleted;
 
-    /// <inheritdoc />
+    /// <summary>
+    /// <see cref="AudioStreamServer"/> クラスの新しいインスタンスを初期化
+    /// </summary>
+    /// <param name="audioService">音声サービス</param>
+    /// <param name="logger">ロガー</param>
+    public AudioStreamServer(IAudioService audioService, ILogger<AudioStreamServer> logger)
+    {
+        _audioService = audioService ?? throw new ArgumentNullException(nameof(audioService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <inheritdoc/>
     public Task StartAsync(int port, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (IsRunning)
         {
-            throw new InvalidOperationException("サーバーは既に実行中");
+            throw new InvalidOperationException("音声サーバーは既に実行中");
         }
 
         _listener = new TcpListener(IPAddress.Any, port);
@@ -60,21 +70,25 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
 
         _serverTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-        // フレーム受信イベントを購読
-        _cameraService.FrameAvailable += OnFrameAvailable;
+        // 音声受信イベントを購読
+        _audioService.AudioAvailable += OnAudioAvailable;
 
         _broadcastTask = ProcessBroadcastQueueAsync(_serverTokenSource.Token);
         _acceptTask = AcceptClientsAsync(_serverTokenSource.Token);
 
-        _logger.LogInformation("ストリーミングサーバーをポート {Port} で開始", port);
+#if DEBUG
+        _statsTask = LogStatsAsync(_serverTokenSource.Token);
+#endif
+
+        _logger.LogInformation("音声ストリーミングサーバーをポート {Port} で開始", port);
 
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc/>
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        _cameraService.FrameAvailable -= OnFrameAvailable;
+        _audioService.AudioAvailable -= OnAudioAvailable;
 
         if (_serverTokenSource is not null)
         {
@@ -125,12 +139,9 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
         _acceptTask = null;
         _broadcastTask = null;
 
-        _logger.LogInformation("ストリーミングサーバーを停止");
+        _logger.LogInformation("音声ストリーミングサーバーを停止");
     }
 
-    /// <summary>
-    /// クライアント接続を受け付けるループ
-    /// </summary>
     private async Task AcceptClientsAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested && _listener is not null)
@@ -138,17 +149,16 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
             try
             {
                 var client = await _listener.AcceptTcpClientAsync(cancellationToken);
-
-                // Nagleアルゴリズム無効化（低遅延のため必須）
                 client.NoDelay = true;
 
                 var clientId = Guid.NewGuid();
                 _ = _clients.TryAdd(clientId, client);
 
-                _logger.LogInformation("クライアント接続: {RemoteEndPoint} (ID: {ClientId})", client.Client.RemoteEndPoint, clientId);
+                _logger.LogInformation("音声クライアント接続: {RemoteEndPoint} (ID: {ClientId})",
+                    client.Client.RemoteEndPoint, clientId);
 
-                // ハンドシェイクを別タスクで実行
-                _ = HandleClientAsync(clientId, client, cancellationToken);
+                // クライアント接続を維持
+                _ = MonitorClientAsync(clientId, client, cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -156,34 +166,16 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "クライアント受付エラー");
+                _logger.LogError(ex, "音声クライアント受付エラー");
             }
         }
     }
 
-    /// <summary>
-    /// クライアントのハンドシェイクを処理
-    /// </summary>
-    private async Task HandleClientAsync(Guid clientId, TcpClient client, CancellationToken cancellationToken)
+    private async Task MonitorClientAsync(Guid clientId, TcpClient client, CancellationToken cancellationToken)
     {
         try
         {
-            var stream = client.GetStream();
-
-            // HTTP風レスポンスヘッダーを送信
-            var header = $"HTTP/1.1 200 OK\r\n" +
-                         $"Content-Type: {StreamingConstants.MjpegContentType}\r\n" +
-                         $"Cache-Control: no-cache\r\n" +
-                         $"Connection: keep-alive\r\n" +
-                         $"\r\n";
-
-            var headerBytes = Encoding.ASCII.GetBytes(header);
-            await stream.WriteAsync(headerBytes, cancellationToken);
-            await stream.FlushAsync(cancellationToken);
-
-            _logger.LogDebug("クライアント {ClientId} へハンドシェイク完了", clientId);
-
-            // 接続を維持（フレーム送信はイベントで行う）
+            // 接続を維持
             while (!cancellationToken.IsCancellationRequested && client.Connected)
             {
                 await Task.Delay(100, cancellationToken);
@@ -195,44 +187,41 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "クライアント {ClientId} エラー", clientId);
+            _logger.LogWarning(ex, "音声クライアント {ClientId} エラー", clientId);
         }
         finally
         {
             _ = _clients.TryRemove(clientId, out _);
             client.Close();
-            _logger.LogInformation("クライアント切断: {ClientId}", clientId);
+            _logger.LogInformation("音声クライアント切断: {ClientId}", clientId);
         }
     }
 
-    /// <summary>
-    /// フレーム受信時にすべてのクライアントへブロードキャスト
-    /// </summary>
-    private void OnFrameAvailable(object? sender, FrameEventArgs e)
+    private void OnAudioAvailable(object? sender, AudioEventArgs e)
     {
-        var frame = e.Frame;
-        var boundary = $"\r\n{StreamingConstants.MjpegBoundary}\r\n" +
-                       $"Content-Type: image/jpeg\r\n" +
-                       $"Content-Length: {frame.JpegData.Length}\r\n" +
-                       $"\r\n";
+        var audio = e.Audio;
 
-        var boundaryBytes = Encoding.ASCII.GetBytes(boundary);
-        
-        // 境界とフレームデータを結合
-        var buffer = new byte[boundaryBytes.Length + frame.JpegData.Length];
-        boundaryBytes.CopyTo(buffer, 0);
-        frame.JpegData.CopyTo(buffer, boundaryBytes.Length);
+        // フレーミング: [4byte長さ][8byteタイムスタンプ][PCMデータ]
+        var dataLength = audio.PcmData.Length;
+        var frameBuffer = new byte[4 + 8 + dataLength];
+
+        BitConverter.TryWriteBytes(frameBuffer.AsSpan(0, 4), dataLength);
+        BitConverter.TryWriteBytes(frameBuffer.AsSpan(4, 8), audio.Timestamp);
+        audio.PcmData.CopyTo(frameBuffer, 12);
 
         // キューに追加
-        _broadcastChannel.Writer.TryWrite(buffer);
+        _broadcastChannel.Writer.TryWrite(frameBuffer);
     }
 
     private async Task ProcessBroadcastQueueAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await foreach (var data in _broadcastChannel.Reader.ReadAllAsync(cancellationToken))
+            await foreach (var frameBuffer in _broadcastChannel.Reader.ReadAllAsync(cancellationToken))
             {
+                Interlocked.Add(ref _totalBytesSent, frameBuffer.Length);
+                Interlocked.Increment(ref _totalPacketsSent);
+
                 // すべてのクライアントに配信
                 var clients = _clients.ToArray();
                 foreach (var (clientId, client) in clients)
@@ -246,12 +235,12 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
                     try
                     {
                         var stream = client.GetStream();
-                        await stream.WriteAsync(data, cancellationToken);
+                        await stream.WriteAsync(frameBuffer, cancellationToken);
                         await stream.FlushAsync(cancellationToken);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogDebug(ex, "クライアント {ClientId} へのフレーム送信エラー", clientId);
+                        _logger.LogDebug(ex, "音声クライアント {ClientId} へのデータ送信エラー", clientId);
                         _ = _clients.TryRemove(clientId, out _);
                         try { client.Close(); } catch { /* 無視 */ }
                     }
@@ -259,34 +248,41 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
             }
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { _logger.LogError(ex, "ビデオブロードキャストキュー処理エラー"); }
+        catch (Exception ex) { _logger.LogError(ex, "ブロードキャストキュー処理エラー"); }
     }
 
-    /// <summary>
-    /// リソースを解放
-    /// </summary>
-    public void Dispose()
+    private async Task LogStatsAsync(CancellationToken cancellationToken)
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        // 同期的に停止
-        _cameraService.FrameAvailable -= OnFrameAvailable;
-        _serverTokenSource?.Cancel();
-        _ = (_acceptTask?.Wait(TimeSpan.FromSeconds(2)));
-
-        foreach (var client in _clients.Values)
+        while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                client.Close();
+                await Task.Delay(1000, cancellationToken);
+                var bytes = Interlocked.Exchange(ref _totalBytesSent, 0);
+                var packets = Interlocked.Exchange(ref _totalPacketsSent, 0);
+                if (packets > 0 || _clients.Count > 0)
+                {
+                    _logger.LogDebug("音声配信統計: {Packets} パケット, {Bytes} バイト, 接続数 {Clients}", 
+                        packets, bytes, _clients.Count);
+                }
             }
-            catch
-            {
-                // 無視
-            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex) { _logger.LogError(ex, "統計ログ出力エラー"); }
+        }
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed) return;
+
+        _audioService.AudioAvailable -= OnAudioAvailable;
+        _serverTokenSource?.Cancel();
+        _ = _acceptTask?.Wait(TimeSpan.FromSeconds(2));
+
+        foreach (var client in _clients.Values)
+        {
+            try { client.Close(); } catch { /* 無視 */ }
         }
 
         _clients.Clear();

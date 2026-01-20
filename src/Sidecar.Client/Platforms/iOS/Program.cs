@@ -8,14 +8,14 @@ using UIKit;
 namespace Sidecar.Client;
 
 /// <summary>
-/// iOSアプリケーションのエントリーポイント。
+/// iOSアプリケーションのエントリーポイント
 /// </summary>
 public static class Program
 {
     /// <summary>
-    /// アプリケーションのメインエントリーポイント。
+    /// アプリケーションのメインエントリーポイント
     /// </summary>
-    /// <param name="args">コマンドライン引数。</param>
+    /// <param name="args">コマンドライン引数</param>
     private static void Main(string[] args)
     {
         UIApplication.Main(args, null, typeof(AppDelegate));

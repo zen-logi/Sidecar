@@ -5,12 +5,12 @@
 namespace Sidecar.Client.WinUI;
 
 /// <summary>
-/// Windows用のアプリケーションクラス。
+/// Windows用のアプリケーションクラス
 /// </summary>
 public partial class App : MauiWinUIApplication
 {
     /// <summary>
-    /// <see cref="App"/> クラスの新しいインスタンスを初期化します。
+    /// <see cref="App"/> クラスの新しいインスタンスを初期化
     /// </summary>
     public App()
     {
@@ -18,8 +18,8 @@ public partial class App : MauiWinUIApplication
     }
 
     /// <summary>
-    /// MAUIアプリケーションを作成します。
+    /// MAUIアプリケーションを作成
     /// </summary>
-    /// <returns>MAUIアプリケーション。</returns>
+    /// <returns>MAUIアプリケーション</returns>
     protected override MauiApp CreateMauiApp() => MauiProgram.CreateMauiApp();
 }

@@ -1,4 +1,4 @@
-// <copyright file="IStreamClient.cs" company="Sidecar">
+// <copyright file="IAudioClient.cs" company="Sidecar">
 // Copyright (c) Sidecar. All rights reserved.
 // </copyright>
 
@@ -7,12 +7,12 @@ using Sidecar.Shared.Models;
 namespace Sidecar.Client.Interfaces;
 
 /// <summary>
-/// MJPEGストリームを受信するクライアントのインターフェース
+/// 音声ストリームを受信するクライアントのインターフェース
 /// </summary>
-public interface IStreamClient : IDisposable
+public interface IAudioClient : IDisposable
 {
     /// <summary>
-    /// ストリーミングサーバーに接続
+    /// 音声ストリーミングサーバーに接続
     /// </summary>
     /// <param name="host">ホストアドレス</param>
     /// <param name="port">ポート番号</param>
@@ -26,15 +26,9 @@ public interface IStreamClient : IDisposable
     void Disconnect();
 
     /// <summary>
-    /// 最新のフレームを取得
+    /// 音声データを受信したときに発生するイベント
     /// </summary>
-    /// <returns>JPEG圧縮されたフレームデータ フレームがない場合はnull</returns>
-    byte[]? GetLatestFrame();
-
-    /// <summary>
-    /// フレームを受信したときに発生するイベント
-    /// </summary>
-    event EventHandler<FrameEventArgs>? FrameReceived;
+    event EventHandler<AudioEventArgs>? AudioReceived;
 
     /// <summary>
     /// 接続状態を取得

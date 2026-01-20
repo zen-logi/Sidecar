@@ -9,7 +9,7 @@ using Android.OS;
 namespace Sidecar.Client;
 
 /// <summary>
-/// AndroidのメインActivity。
+/// AndroidのメインActivity
 /// </summary>
 [Activity(
     Theme = "@style/Maui.SplashTheme",

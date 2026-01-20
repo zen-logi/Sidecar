@@ -5,16 +5,16 @@
 namespace Sidecar.Client;
 
 /// <summary>
-/// MAUIアプリケーションクラス。
+/// MAUIアプリケーションクラス
 /// </summary>
 public partial class App : Application
 {
     private readonly IServiceProvider _serviceProvider;
 
     /// <summary>
-    /// <see cref="App"/> クラスの新しいインスタンスを初期化します。
+    /// <see cref="App"/> クラスの新しいインスタンスを初期化
     /// </summary>
-    /// <param name="serviceProvider">サービスプロバイダー。</param>
+    /// <param name="serviceProvider">サービスプロバイダー</param>
     public App(IServiceProvider serviceProvider)
     {
         InitializeComponent();
@@ -22,10 +22,10 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// メインウィンドウを作成します。
+    /// メインウィンドウを作成
     /// </summary>
-    /// <param name="activationState">アクティベーション状態。</param>
-    /// <returns>作成されたウィンドウ。</returns>
+    /// <param name="activationState">アクティベーション状態</param>
+    /// <returns>作成されたウィンドウ</returns>
     protected override Window CreateWindow(IActivationState? activationState)
     {
         var mainPage = _serviceProvider.GetRequiredService<MainPage>();

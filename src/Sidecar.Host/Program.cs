@@ -9,7 +9,7 @@ using Sidecar.Host.Interfaces;
 using Sidecar.Shared;
 
 Console.WriteLine("=================================");
-Console.WriteLine(" Sidecar Host - MJPEG Streamer");
+Console.WriteLine(" Sidecar Host - Video & Audio Streamer");
 Console.WriteLine("=================================");
 Console.WriteLine();
 
@@ -29,6 +29,8 @@ await using var serviceProvider = services.BuildServiceProvider();
 var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
 var cameraService = serviceProvider.GetRequiredService<ICameraService>();
 var streamServer = serviceProvider.GetRequiredService<IStreamServer>();
+var audioService = serviceProvider.GetRequiredService<IAudioService>();
+var audioStreamServer = serviceProvider.GetRequiredService<IAudioStreamServer>();
 
 using var cts = new CancellationTokenSource();
 
@@ -42,68 +44,106 @@ Console.CancelKeyPress += (_, e) =>
 
 try
 {
-    // カメラデバイスの列挙
-    logger.LogInformation("利用可能なカメラデバイスを検索中...");
-    var devices = cameraService.GetAvailableDevices();
+    // ==================== カメラ選択 ====================
+    logger.LogInformation("利用可能なカメラデバイスを検索中");
+    var cameras = cameraService.GetAvailableDevices();
 
-    if (devices.Count == 0)
+    if (cameras.Count == 0)
     {
-        logger.LogError("利用可能なカメラデバイスが見つかりません");
+        logger.LogError("利用可能なカメラデバイスが見つからない");
         return 1;
     }
 
-    Console.WriteLine($"\n{devices.Count} 個のカメラデバイスが見つかりました:");
-    foreach (var device in devices)
+    foreach (var camera in cameras)
     {
-        Console.WriteLine($"  {device}");
+        Console.WriteLine($"  [{camera.Index}] {camera.Name}");
     }
 
-    // カメラ選択
-    int selectedIndex;
+    int selectedCameraIndex;
     if (args.Length > 0 && int.TryParse(args[0], out var argIndex))
     {
-        selectedIndex = argIndex;
-        logger.LogInformation("コマンドライン引数からカメラ {Index} を選択", selectedIndex);
+        selectedCameraIndex = argIndex;
+        logger.LogInformation("コマンドライン引数からカメラ {Index} を選択", selectedCameraIndex);
     }
     else
     {
-        Console.Write("\n使用するカメラのインデックスを入力してください: ");
+        Console.Write("\n使用するカメラのインデックスを入力: ");
         var input = Console.ReadLine();
 
-        if (!int.TryParse(input, out selectedIndex))
+        if (!int.TryParse(input, out selectedCameraIndex))
         {
-            logger.LogError("無効な入力です");
+            logger.LogError("無効な入力");
             return 1;
         }
     }
 
-    // 選択されたデバイスが有効か確認
-    if (!devices.Any(d => d.Index == selectedIndex))
+    if (selectedCameraIndex < 0 || selectedCameraIndex >= cameras.Count)
     {
-        logger.LogError("カメラインデックス {Index} は存在しません", selectedIndex);
+        logger.LogError("カメラインデックス {Index} は存在しない", selectedCameraIndex);
         return 1;
     }
 
-    // ポート番号の取得
-    var port = StreamingConstants.DefaultPort;
-    if (args.Length > 1 && int.TryParse(args[1], out var argPort))
+    // ==================== 音声デバイス選択 ====================
+    logger.LogInformation("利用可能な音声デバイスを検索中");
+    var audioDevices = audioService.GetAvailableDevices();
+
+    string? selectedAudioDeviceId = null;
+    if (audioDevices.Count > 0)
     {
-        port = argPort;
+        for (int i = 0; i < audioDevices.Count; i++)
+        {
+            Console.WriteLine($"  [{i}] {audioDevices[i].Name}");
+        }
+
+        Console.Write("\n使用する音声デバイスのインデックスを入力 (スキップ: Enter): ");
+        var audioInput = Console.ReadLine();
+
+        if (!string.IsNullOrWhiteSpace(audioInput) && int.TryParse(audioInput, out var audioIndex))
+        {
+            if (audioIndex >= 0 && audioIndex < audioDevices.Count)
+            {
+                selectedAudioDeviceId = audioDevices[audioIndex].Id;
+            }
+        }
+    }
+    else
+    {
+        logger.LogWarning("利用可能な音声デバイスが見つからない 音声ストリーミングは無効");
     }
 
-    // カメラキャプチャ開始
-    await cameraService.StartCaptureAsync(selectedIndex, cts.Token);
+    // ==================== ポート番号の取得 ====================
+    var videoPort = StreamingConstants.DefaultPort;
+    var audioPort = StreamingConstants.DefaultAudioPort;
 
-    // ストリーミングサーバー開始
-    await streamServer.StartAsync(port, cts.Token);
+    if (args.Length > 1 && int.TryParse(args[1], out var argPort))
+    {
+        videoPort = argPort;
+        audioPort = argPort + 1;
+    }
 
-    Console.WriteLine($"\n接続先: http://<このPCのIPアドレス>:{port}");
-    Console.WriteLine("Ctrl+C で終了します。\n");
+    // ==================== キャプチャ開始 ====================
+    await cameraService.StartCaptureAsync(selectedCameraIndex, cts.Token);
+    await streamServer.StartAsync(videoPort, cts.Token);
+
+    if (selectedAudioDeviceId is not null)
+    {
+        await audioService.StartCaptureAsync(selectedAudioDeviceId, cts.Token);
+        await audioStreamServer.StartAsync(audioPort, cts.Token);
+    }
+
+    Console.WriteLine($"\n===== ストリーミング開始 =====");
+    Console.WriteLine($"ビデオ: http://<このPCのIPアドレス>:{videoPort}");
+    if (selectedAudioDeviceId is not null)
+    {
+        Console.WriteLine($"オーディオ: tcp://<このPCのIPアドレス>:{audioPort}");
+    }
+    Console.WriteLine("Ctrl+C で終了\n");
 
     // メインループ
     while (!cts.Token.IsCancellationRequested)
     {
-        Console.Write($"\r接続クライアント数: {streamServer.ConnectedClientCount}  ");
+        var audioClientCount = selectedAudioDeviceId is not null ? audioStreamServer.ConnectedClientCount : 0;
+        Console.Write($"\r接続クライアント数 - ビデオ: {streamServer.ConnectedClientCount}, オーディオ: {audioClientCount}   ");
         try
         {
             await Task.Delay(1000, cts.Token);
@@ -120,15 +160,35 @@ catch (OperationCanceledException)
 }
 catch (Exception ex)
 {
-    logger.LogError(ex, "予期しないエラーが発生しました");
+    logger.LogError(ex, "予期しないエラーが発生");
     return 1;
 }
 finally
 {
-    Console.WriteLine("\nサーバーを停止しています...");
-    await streamServer.StopAsync(CancellationToken.None);
-    await cameraService.StopCaptureAsync(CancellationToken.None);
-    Console.WriteLine("終了しました。");
+    Console.WriteLine("\nサーバーを停止中...");
+    
+    // タイムアウト付きの停止処理
+    using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+    var shutdownToken = shutdownCts.Token;
+
+    async Task StopService(string name, Func<CancellationToken, Task> stopAction)
+    {
+        try
+        {
+            await stopAction(shutdownToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "{Name} 停止中のエラー", name);
+        }
+    }
+
+    await StopService("音声ストリーミング", audioStreamServer.StopAsync);
+    await StopService("音声キャプチャ", audioService.StopCaptureAsync);
+    await StopService("ビデオストリーミング", streamServer.StopAsync);
+    await StopService("カメラキャプチャ", cameraService.StopCaptureAsync);
+
+    Console.WriteLine("終了");
 }
 
 return 0;

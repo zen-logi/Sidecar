@@ -1,13 +1,13 @@
-// <copyright file="IStreamServer.cs" company="Sidecar">
+// <copyright file="IAudioStreamServer.cs" company="Sidecar">
 // Copyright (c) Sidecar. All rights reserved.
 // </copyright>
 
 namespace Sidecar.Host.Interfaces;
 
 /// <summary>
-/// MJPEGストリームを配信するサーバーのインターフェース
+/// 音声ストリームを配信するサーバーのインターフェース
 /// </summary>
-public interface IStreamServer : IDisposable
+public interface IAudioStreamServer : IDisposable
 {
     /// <summary>
     /// サーバーを開始

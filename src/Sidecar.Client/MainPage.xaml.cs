@@ -9,7 +9,7 @@ using SkiaSharp.Views.Maui;
 namespace Sidecar.Client;
 
 /// <summary>
-/// メインページのコードビハインド。
+/// メインページのコードビハインド
 /// </summary>
 public partial class MainPage : ContentPage
 {
@@ -19,9 +19,9 @@ public partial class MainPage : ContentPage
     private bool _isRendering;
 
     /// <summary>
-    /// <see cref="MainPage"/> クラスの新しいインスタンスを初期化します。
+    /// <see cref="MainPage"/> クラスの新しいインスタンスを初期化
     /// </summary>
-    /// <param name="viewModel">ViewModel。</param>
+    /// <param name="viewModel">ViewModel</param>
     public MainPage(MainPageViewModel viewModel)
     {
         InitializeComponent();
@@ -35,7 +35,7 @@ public partial class MainPage : ContentPage
     private volatile int _isDecoding;
 
     /// <summary>
-    /// フレーム更新時のイベントハンドラ。
+    /// フレーム更新時のイベントハンドラ
     /// </summary>
     private void OnFrameUpdated(object? sender, byte[] jpegData)
     {
@@ -78,7 +78,7 @@ public partial class MainPage : ContentPage
     // Timer Loop Removed
 
     /// <summary>
-    /// キャンバス描画イベントハンドラ。
+    /// キャンバス描画イベントハンドラ
     /// </summary>
     private void OnCanvasViewPaintSurface(object sender, SKPaintSurfaceEventArgs e)
     {
@@ -145,7 +145,7 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
-    /// 2つのカラーマトリックスを掛け合わせます (A * B)。
+    /// 2つのカラーマトリックスを掛け合わせる (A * B)
     /// </summary>
     private static float[] MultiplyColorMatrix(float[] matrixA, float[] matrixB)
     {
@@ -237,7 +237,7 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
-    /// 指定されたモードに応じたベースカラーマトリックスを作成します。
+    /// 指定されたモードに応じたベースカラーマトリックスを作成
     /// </summary>
     private static float[]? GetBaseColorMatrix(ColorMode mode)
     {
@@ -457,7 +457,7 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
-    /// オーバーレイUIの表示切り替え。
+    /// オーバーレイUIの表示切り替え
     /// </summary>
     private async void OnOverlayTapped(object? sender, EventArgs e)
     {
@@ -474,7 +474,7 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
-    /// アスペクト比を維持した描画先矩形を計算します。
+    /// アスペクト比を維持した描画先矩形を計算
     /// </summary>
     private static SKRect CalculateDestRect(int srcWidth, int srcHeight, int destWidth, int destHeight)
     {
@@ -506,7 +506,7 @@ public partial class MainPage : ContentPage
     }
 
     /// <summary>
-    /// ページ消滅時のクリーンアップ。
+    /// ページ消滅時のクリーンアップ
     /// </summary>
     protected override void OnDisappearing()
     {

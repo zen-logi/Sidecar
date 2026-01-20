@@ -3,9 +3,16 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:skia="clr-namespace:SkiaSharp.Views.Maui.Controls;assembly=SkiaSharp.Views.Maui.Controls"
              xmlns:viewModels="clr-namespace:Sidecar.Client.ViewModels"
+             xmlns:converters="clr-namespace:Sidecar.Client.Converters"
              x:Class="Sidecar.Client.MainPage"
              x:DataType="viewModels:MainPageViewModel"
              BackgroundColor="#121212">
+
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <converters:MuteIconConverter x:Key="MuteIconConverter" />
+        </ResourceDictionary>
+    </ContentPage.Resources>
 
     <Grid>
         <!-- 映像レイヤー -->
@@ -157,15 +164,46 @@
                         Padding="24,32" 
                         StrokeThickness="0"
                         VerticalOptions="End">
-                    <Button Text="Disconnect" 
-                            Command="{Binding DisconnectCommand}" 
-                            BackgroundColor="#FF453A" 
-                            TextColor="White" 
-                            CornerRadius="24"
-                            HeightRequest="48"
-                            WidthRequest="160"
-                            HorizontalOptions="Center"
-                            FontAttributes="Bold"/>
+                    <VerticalStackLayout Spacing="24">
+                        <!-- オーディオコントロール -->
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16" WidthRequest="400" HorizontalOptions="Center">
+                            <Button Grid.Column="0"
+                                    Text="{Binding IsMuted, Converter={StaticResource MuteIconConverter}}"
+                                    Command="{Binding ToggleMuteCommand}"
+                                    BackgroundColor="Transparent"
+                                    TextColor="White"
+                                    FontSize="24"
+                                    WidthRequest="48"
+                                    HeightRequest="48"
+                                    Padding="0"/>
+                            
+                            <Slider Grid.Column="1"
+                                    Value="{Binding Volume}"
+                                    Minimum="0"
+                                    Maximum="1"
+                                    MinimumTrackColor="#007AFF"
+                                    MaximumTrackColor="#444444"
+                                    ThumbColor="White"
+                                    VerticalOptions="Center"/>
+                            
+                            <Label Grid.Column="2" 
+                                   Text="{Binding Volume, StringFormat='{0:P0}'}" 
+                                   TextColor="#808080" 
+                                   VerticalOptions="Center" 
+                                   FontSize="12" 
+                                   WidthRequest="40"/>
+                        </Grid>
+
+                        <Button Text="Disconnect" 
+                                Command="{Binding DisconnectCommand}" 
+                                BackgroundColor="#FF453A" 
+                                TextColor="White" 
+                                CornerRadius="24"
+                                HeightRequest="48"
+                                WidthRequest="160"
+                                HorizontalOptions="Center"
+                                FontAttributes="Bold"/>
+                    </VerticalStackLayout>
                 </Border>
             </Grid>
         </Grid>

@@ -11,7 +11,7 @@ using Sidecar.Shared.Models;
 namespace Sidecar.Client.Services;
 
 /// <summary>
-/// MJPEGストリームを受信するTCPクライアント。
+/// MJPEGストリームを受信するTCPクライアント
 /// </summary>
 public sealed class StreamClient : IStreamClient
 {
@@ -40,7 +40,7 @@ public sealed class StreamClient : IStreamClient
 
         if (State == ConnectionState.Connected || State == ConnectionState.Connecting)
         {
-            throw new InvalidOperationException("既に接続中です。");
+            throw new InvalidOperationException("既に接続中");
         }
 
         State = ConnectionState.Connecting;
@@ -144,7 +144,7 @@ public sealed class StreamClient : IStreamClient
     public byte[]? GetLatestFrame() => Volatile.Read(ref _latestFrame);
 
     /// <summary>
-    /// HTTPヘッダーを読み飛ばします。
+    /// HTTPヘッダーを読み飛ばす
     /// </summary>
     private static async Task SkipHttpHeaderAsync(NetworkStream stream, CancellationToken cancellationToken)
     {
@@ -157,7 +157,7 @@ public sealed class StreamClient : IStreamClient
             var read = await stream.ReadAsync(buffer.AsMemory(0, 1), cancellationToken);
             if (read == 0)
             {
-                throw new IOException("接続が閉じられました。");
+                throw new IOException("接続が閉じられました");
             }
 
             // バッファをシフト
@@ -175,7 +175,7 @@ public sealed class StreamClient : IStreamClient
     }
 
     /// <summary>
-    /// フレーム受信ループ。
+    /// フレーム受信ループ
     /// </summary>
     private void ReceiveLoop(CancellationToken cancellationToken)
     {
@@ -208,7 +208,7 @@ public sealed class StreamClient : IStreamClient
         }
         catch (OperationCanceledException)
         {
-            // 正常キャンセル
+            // 正常終了
         }
         catch (IOException)
         {
@@ -225,7 +225,7 @@ public sealed class StreamClient : IStreamClient
     }
 
     /// <summary>
-    /// バッファからフレームを抽出します。
+    /// バッファからフレームを抽出
     /// </summary>
     private void ExtractFrames(MemoryStream buffer, byte[] boundaryBytes, ref long frameNumber)
     {
@@ -286,7 +286,7 @@ public sealed class StreamClient : IStreamClient
     }
 
     /// <summary>
-    /// バイト配列内でパターンを検索します。
+    /// バイト配列内でパターンを検索
     /// </summary>
     private static int FindPattern(byte[] data, byte[] pattern, int startIndex = 0)
     {
@@ -312,7 +312,7 @@ public sealed class StreamClient : IStreamClient
     }
 
     /// <summary>
-    /// ヘッダーからContent-Lengthを解析します。
+    /// ヘッダーからContent-Lengthを解析
     /// </summary>
     private static int ParseContentLength(string header)
     {
@@ -333,7 +333,7 @@ public sealed class StreamClient : IStreamClient
     }
 
     /// <summary>
-    /// リソースを解放します。
+    /// リソースを解放
     /// </summary>
     public void Dispose()
     {
