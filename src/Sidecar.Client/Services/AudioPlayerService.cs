@@ -6,6 +6,8 @@ using Sidecar.Client.Interfaces;
 
 #if WINDOWS
 using NAudio.Wave;
+using NAudio.CoreAudioApi;
+using NAudio.CoreAudioApi.Interfaces;
 #endif
 
 namespace Sidecar.Client.Services;
@@ -23,6 +25,10 @@ public sealed class AudioPlayerService : IAudioPlayerService
 #if WINDOWS
     private IWavePlayer? _waveOut;
     private BufferedWaveProvider? _bufferedWaveProvider;
+    private MMDeviceEnumerator? _deviceEnumerator;
+    private DeviceNotificationClient? _notificationClient;
+    private int _sampleRate;
+    private int _channels;
 #endif
 
     /// <inheritdoc />
@@ -67,23 +73,68 @@ public sealed class AudioPlayerService : IAudioPlayerService
     {
         if (_isPlaying) return;
 
+        _sampleRate = sampleRate;
+        _channels = channels;
+
 #if WINDOWS
-        var waveFormat = new WaveFormat(sampleRate, channels);
+        InitializePlayer();
+
+        // デバイス変更の監視を開始
+        try
+        {
+            _deviceEnumerator = new MMDeviceEnumerator();
+            _notificationClient = new DeviceNotificationClient(() =>
+            {
+                // デバイスが変更されたら再初期化
+                if (_isPlaying)
+                {
+                    Stop();
+                    Start(_sampleRate, _channels);
+                }
+            });
+            _deviceEnumerator.RegisterEndpointNotificationCallback(_notificationClient);
+        }
+        catch (Exception)
+        {
+            // 通知に失敗しても再生自体は継続
+        }
+#endif
+        _isPlaying = true;
+    }
+
+#if WINDOWS
+    private void InitializePlayer()
+    {
+        var waveFormat = new WaveFormat(_sampleRate, _channels);
         _bufferedWaveProvider = new BufferedWaveProvider(waveFormat)
         {
             DiscardOnBufferOverflow = true,
             BufferDuration = TimeSpan.FromSeconds(5)
         };
 
-        _waveOut = new WaveOutEvent
-        {
-            Volume = _isMuted ? 0 : _volume
-        };
+        // WASAPI Shared モードを使用してデフォルトデバイスで再生
+        _waveOut = new WasapiOut(AudioClientShareMode.Shared, 100);
         _waveOut.Init(_bufferedWaveProvider);
+        _waveOut.Volume = _isMuted ? 0 : _volume;
         _waveOut.Play();
-#endif
-        _isPlaying = true;
     }
+
+    private class DeviceNotificationClient(Action onDeviceChanged) : IMMNotificationClient
+    {
+        public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
+        {
+            if (flow == DataFlow.Render && (role == Role.Console || role == Role.Multimedia))
+            {
+                onDeviceChanged();
+            }
+        }
+
+        public void OnDeviceAdded(string pwstrDeviceId) { }
+        public void OnDeviceRemoved(string pwstrDeviceId) { }
+        public void OnDeviceStateChanged(string pwstrDeviceId, DeviceState dwNewState) { }
+        public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) { }
+    }
+#endif
 
     /// <summary>
     /// 音声再生を停止
@@ -93,10 +144,22 @@ public sealed class AudioPlayerService : IAudioPlayerService
         if (!_isPlaying) return;
 
 #if WINDOWS
+        if (_deviceEnumerator != null && _notificationClient != null)
+        {
+            try
+            {
+                _deviceEnumerator.UnregisterEndpointNotificationCallback(_notificationClient);
+            }
+            catch { }
+        }
+
         _waveOut?.Stop();
         _waveOut?.Dispose();
         _waveOut = null;
         _bufferedWaveProvider = null;
+        _deviceEnumerator?.Dispose();
+        _deviceEnumerator = null;
+        _notificationClient = null;
 #endif
         _isPlaying = false;
     }

@@ -5,6 +5,7 @@
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 using Sidecar.Host.Interfaces;
 using Sidecar.Shared;
 using Sidecar.Shared.Models;
@@ -126,7 +127,8 @@ public sealed class AudioService : IAudioService
             capture.RecordingStopped += OnRecordingStopped;
 
             _waveIn = capture;
-            _logger.LogInformation("WASAPI キャプチャを開始: {DeviceName}", device.FriendlyName);
+            _logger.LogInformation("WASAPI キャプチャを開始: {DeviceName} (入力フォーマット: {InputFormat})", 
+                device.FriendlyName, _waveIn.WaveFormat);
         }
 
         // 変換用プロバイダーの設定
@@ -136,11 +138,19 @@ public sealed class AudioService : IAudioService
             BufferDuration = TimeSpan.FromSeconds(1)
         };
 
-        // 32-bit Float -> 16-bit PCM & リサンプリング (48kHz固定)
-        _conversionStream = new MediaFoundationResampler(_captureProvider, _targetFormat)
+        // managedな変換パイプラインの構築
+        ISampleProvider sampleProvider = _captureProvider.ToSampleProvider();
+
+        // リサンプリングが必要な場合 (例: 44.1kHz -> 48kHz)
+        if (sampleProvider.WaveFormat.SampleRate != _targetFormat.SampleRate)
         {
-            ResamplerQuality = 60 // 高速かつ実用的な品質
-        };
+            _logger.LogInformation("リサンプリングを適用: {SourceRate}Hz -> {TargetRate}Hz", 
+                sampleProvider.WaveFormat.SampleRate, _targetFormat.SampleRate);
+            sampleProvider = new WdlResamplingSampleProvider(sampleProvider, _targetFormat.SampleRate);
+        }
+
+        // 16-bit PCMへの変換
+        _conversionStream = new SampleToWaveProvider16(sampleProvider);
 
         _waveIn.StartRecording();
         return Task.CompletedTask;
@@ -186,9 +196,11 @@ public sealed class AudioService : IAudioService
             _captureProvider.AddSamples(e.Buffer, 0, e.BytesRecorded);
 
             // ターゲットフォーマットへ変換して読み取り
+            int totalRead = 0;
             int read;
             while ((read = _conversionStream.Read(_conversionBuffer, 0, _conversionBuffer.Length)) > 0)
             {
+                totalRead += read;
                 var pcmData = new byte[read];
                 Array.Copy(_conversionBuffer, 0, pcmData, 0, read);
 
@@ -199,6 +211,12 @@ public sealed class AudioService : IAudioService
                     DateTime.UtcNow.Ticks);
 
                 AudioAvailable?.Invoke(this, new AudioEventArgs(audioData));
+            }
+
+            if (totalRead == 0 && e.BytesRecorded > 0)
+            {
+                _logger.LogDebug("音声変換出力なし: 入力 {InputBytes} バイト, バッファ残量 {BufferedBytes} バイト", 
+                    e.BytesRecorded, _captureProvider.BufferedBytes);
             }
         }
         catch (Exception ex)
