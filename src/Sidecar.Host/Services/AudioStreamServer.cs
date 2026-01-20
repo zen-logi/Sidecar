@@ -182,43 +182,48 @@ public sealed class AudioStreamServer : IAudioStreamServer
 
     private void OnAudioAvailable(object? sender, AudioEventArgs e)
     {
-        var audio = e.Audio;
-
-        // フレーミング: [4byte長さ][8byteタイムスタンプ][PCMデータ]
-        var dataLength = audio.PcmData.Length;
-        var frameBuffer = new byte[4 + 8 + dataLength];
-
-        // 長さ (Little Endian)
-        BitConverter.TryWriteBytes(frameBuffer.AsSpan(0, 4), dataLength);
-
-        // タイムスタンプ (Little Endian) - 将来のA/V同期用
-        BitConverter.TryWriteBytes(frameBuffer.AsSpan(4, 8), audio.Timestamp);
-
-        // PCMデータ
-        audio.PcmData.CopyTo(frameBuffer, 12);
-
-        // すべてのクライアントにブロードキャスト
-        foreach (var (clientId, client) in _clients.ToArray())
+        // 配信処理 (キャプチャスレッドのブロッキングを避けるためバックグラウンドで実行)
+        _ = Task.Run(async () =>
         {
-            if (!client.Connected)
-            {
-                _ = _clients.TryRemove(clientId, out _);
-                continue;
-            }
+            var audio = e.Audio;
 
-            try
+            // フレーミング: [4byte長さ][8byteタイムスタンプ][PCMデータ]
+            var dataLength = audio.PcmData.Length;
+            var frameBuffer = new byte[4 + 8 + dataLength];
+
+            // 長さ (Little Endian)
+            BitConverter.TryWriteBytes(frameBuffer.AsSpan(0, 4), dataLength);
+
+            // タイムスタンプ (Little Endian)
+            BitConverter.TryWriteBytes(frameBuffer.AsSpan(4, 8), audio.Timestamp);
+
+            // PCMデータ
+            audio.PcmData.CopyTo(frameBuffer, 12);
+
+            // すべてのクライアントに配信
+            var clients = _clients.ToArray();
+            foreach (var (clientId, client) in clients)
             {
-                var stream = client.GetStream();
-                stream.Write(frameBuffer);
-                stream.Flush();
+                if (!client.Connected || _serverTokenSource?.IsCancellationRequested == true)
+                {
+                    _ = _clients.TryRemove(clientId, out _);
+                    continue;
+                }
+
+                try
+                {
+                    var stream = client.GetStream();
+                    await stream.WriteAsync(frameBuffer, _serverTokenSource?.Token ?? CancellationToken.None);
+                    await stream.FlushAsync(_serverTokenSource?.Token ?? CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "音声クライアント {ClientId} へのデータ送信エラー", clientId);
+                    _ = _clients.TryRemove(clientId, out _);
+                    try { client.Close(); } catch { /* 無視 */ }
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "音声クライアント {ClientId} へのデータ送信エラー", clientId);
-                _ = _clients.TryRemove(clientId, out _);
-                try { client.Close(); } catch { /* 無視 */ }
-            }
-        }
+        });
     }
 
     /// <inheritdoc/>

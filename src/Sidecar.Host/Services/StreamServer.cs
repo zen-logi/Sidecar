@@ -202,50 +202,44 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
     /// </summary>
     private void OnFrameAvailable(object? sender, FrameEventArgs e)
     {
-        var frame = e.Frame;
-        var boundary = $"\r\n{StreamingConstants.MjpegBoundary}\r\n" +
-                       $"Content-Type: image/jpeg\r\n" +
-                       $"Content-Length: {frame.JpegData.Length}\r\n" +
-                       $"\r\n";
-
-        var boundaryBytes = Encoding.ASCII.GetBytes(boundary);
-
-        // スナップショットを使用してイテレーション中の変更を防ぐ
-        foreach (var (clientId, client) in _clients.ToArray())
+        // 配信処理 (キャプチャスレッドのブロッキングを避けるためバックグラウンドで実行)
+        _ = Task.Run(async () =>
         {
-            if (!client.Connected)
+            var frame = e.Frame;
+            var boundary = $"\r\n{StreamingConstants.MjpegBoundary}\r\n" +
+                           $"Content-Type: image/jpeg\r\n" +
+                           $"Content-Length: {frame.JpegData.Length}\r\n" +
+                           $"\r\n";
+
+            var boundaryBytes = Encoding.ASCII.GetBytes(boundary);
+
+            // すべてのクライアントに配信
+            var clients = _clients.ToArray();
+            foreach (var (clientId, client) in clients)
             {
-                _ = _clients.TryRemove(clientId, out _);
-                continue;
-            }
+                if (!client.Connected || _serverTokenSource?.IsCancellationRequested == true)
+                {
+                    _ = _clients.TryRemove(clientId, out _);
+                    continue;
+                }
 
-            try
-            {
-                var stream = client.GetStream();
-
-                // 境界文字列を送信
-                stream.Write(boundaryBytes);
-
-                // フレームデータを送信
-                stream.Write(frame.JpegData);
-
-                stream.Flush();
-            }
-            catch (Exception ex)
-            {
-                // 送信エラーの場合はクライアントを削除
-                _logger.LogDebug(ex, "クライアント {ClientId} へのフレーム送信エラー", clientId);
-                _ = _clients.TryRemove(clientId, out _);
                 try
                 {
-                    client.Close();
+                    var stream = client.GetStream();
+
+                    // 境界文字列とフレームデータを非同期で送信
+                    await stream.WriteAsync(boundaryBytes, _serverTokenSource?.Token ?? CancellationToken.None);
+                    await stream.WriteAsync(frame.JpegData, _serverTokenSource?.Token ?? CancellationToken.None);
+                    await stream.FlushAsync(_serverTokenSource?.Token ?? CancellationToken.None);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // 無視
+                    _logger.LogDebug(ex, "クライアント {ClientId} へのフレーム送信エラー", clientId);
+                    _ = _clients.TryRemove(clientId, out _);
+                    try { client.Close(); } catch { /* 無視 */ }
                 }
             }
-        }
+        });
     }
 
     /// <summary>

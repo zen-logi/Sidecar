@@ -22,7 +22,7 @@ public sealed class AudioService : IAudioService
     private WaveFormat? _targetFormat;
     private BufferedWaveProvider? _captureProvider;
     private IWaveProvider? _conversionStream;
-    private byte[] _conversionBuffer = new byte[StreamingConstants.AudioReceiveBufferSize];
+    private byte[] _conversionBuffer = new byte[4096]; // 低遅延化のためバッファサイズを縮小
     private bool _disposed;
 
     /// <inheritdoc/>
@@ -195,9 +195,10 @@ public sealed class AudioService : IAudioService
             // キャプチャデータをバッファに追加
             _captureProvider.AddSamples(e.Buffer, 0, e.BytesRecorded);
 
-            // ターゲットフォーマットへ変換して読み取り
+            // ターゲットフォーマットへ変換して読み取り (可能な限り多くのデータを取得)
             int totalRead = 0;
             int read;
+            // 少ないデータ量でも確実に読み取るため、残響などを考慮しループを継続
             while ((read = _conversionStream.Read(_conversionBuffer, 0, _conversionBuffer.Length)) > 0)
             {
                 totalRead += read;
@@ -215,7 +216,8 @@ public sealed class AudioService : IAudioService
 
             if (totalRead == 0 && e.BytesRecorded > 0)
             {
-                _logger.LogDebug("音声変換出力なし: 入力 {InputBytes} バイト, バッファ残量 {BufferedBytes} バイト", 
+                // リサンプラーがデータを溜めている可能性があるため警告は最小限に
+                _logger.LogTrace("音声変換出力なし: 入力 {InputBytes} バイト, バッファ残量 {BufferedBytes} バイト", 
                     e.BytesRecorded, _captureProvider.BufferedBytes);
             }
         }

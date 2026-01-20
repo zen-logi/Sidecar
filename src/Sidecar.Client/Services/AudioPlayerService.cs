@@ -6,6 +6,7 @@ using Sidecar.Client.Interfaces;
 
 #if WINDOWS
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 #endif
@@ -25,6 +26,7 @@ public sealed class AudioPlayerService : IAudioPlayerService
 #if WINDOWS
     private IWavePlayer? _waveOut;
     private BufferedWaveProvider? _bufferedWaveProvider;
+    private VolumeSampleProvider? _volumeProvider;
     private MMDeviceEnumerator? _deviceEnumerator;
     private DeviceNotificationClient? _notificationClient;
     private int _sampleRate;
@@ -39,9 +41,9 @@ public sealed class AudioPlayerService : IAudioPlayerService
         {
             _volume = Math.Clamp(value, 0.0f, 1.0f);
 #if WINDOWS
-            if (_waveOut != null)
+            if (_volumeProvider != null)
             {
-                _waveOut.Volume = _isMuted ? 0 : _volume;
+                _volumeProvider.Volume = _isMuted ? 0 : _volume;
             }
 #endif
         }
@@ -55,9 +57,9 @@ public sealed class AudioPlayerService : IAudioPlayerService
         {
             _isMuted = value;
 #if WINDOWS
-            if (_waveOut != null)
+            if (_volumeProvider != null)
             {
-                _waveOut.Volume = _isMuted ? 0 : _volume;
+                _volumeProvider.Volume = _isMuted ? 0 : _volume;
             }
 #endif
         }
@@ -112,10 +114,15 @@ public sealed class AudioPlayerService : IAudioPlayerService
             BufferDuration = TimeSpan.FromSeconds(5)
         };
 
-        // WASAPI Shared モードを使用してデフォルトデバイスで再生
+        // ソフトウェアレベルでの音量制御 (システム音量を変更しない)
+        _volumeProvider = new VolumeSampleProvider(_bufferedWaveProvider.ToSampleProvider())
+        {
+            Volume = _isMuted ? 0 : _volume
+        };
+
+        // WASAPI Shared モードを使用してデフォルトデバイスで再生 (システム音量は維持)
         _waveOut = new WasapiOut(AudioClientShareMode.Shared, 100);
-        _waveOut.Init(_bufferedWaveProvider);
-        _waveOut.Volume = _isMuted ? 0 : _volume;
+        _waveOut.Init(_volumeProvider);
         _waveOut.Play();
     }
 
@@ -156,6 +163,7 @@ public sealed class AudioPlayerService : IAudioPlayerService
         _waveOut?.Stop();
         _waveOut?.Dispose();
         _waveOut = null;
+        _volumeProvider = null;
         _bufferedWaveProvider = null;
         _deviceEnumerator?.Dispose();
         _deviceEnumerator = null;
