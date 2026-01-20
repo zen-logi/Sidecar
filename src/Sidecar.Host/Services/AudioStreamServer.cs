@@ -5,6 +5,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Sidecar.Host.Interfaces;
 using Sidecar.Shared;
@@ -23,7 +24,19 @@ public sealed class AudioStreamServer : IAudioStreamServer
     private TcpListener? _listener;
     private CancellationTokenSource? _serverTokenSource;
     private Task? _acceptTask;
+    private Task? _broadcastTask;
+    private readonly Channel<byte[]> _broadcastChannel = Channel.CreateBounded<byte[]>(
+        new BoundedChannelOptions(StreamingConstants.AudioQueueLimit) 
+        { 
+            FullMode = BoundedChannelFullMode.DropOldest, 
+            SingleReader = true 
+        });
+    private long _totalBytesSent;
+    private long _totalPacketsSent;
     private bool _disposed;
+#if DEBUG
+    private Task? _statsTask;
+#endif
 
     /// <inheritdoc/>
     public int ConnectedClientCount => _clients.Count;
@@ -60,7 +73,12 @@ public sealed class AudioStreamServer : IAudioStreamServer
         // 音声受信イベントを購読
         _audioService.AudioAvailable += OnAudioAvailable;
 
+        _broadcastTask = ProcessBroadcastQueueAsync(_serverTokenSource.Token);
         _acceptTask = AcceptClientsAsync(_serverTokenSource.Token);
+
+#if DEBUG
+        _statsTask = LogStatsAsync(_serverTokenSource.Token);
+#endif
 
         _logger.LogInformation("音声ストリーミングサーバーをポート {Port} で開始", port);
 
@@ -77,21 +95,7 @@ public sealed class AudioStreamServer : IAudioStreamServer
             await _serverTokenSource.CancelAsync();
         }
 
-        // すべてのクライアントを切断
-        foreach (var client in _clients.Values.ToArray())
-        {
-            try
-            {
-                client.Close();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "クライアント切断中のエラー");
-            }
-        }
-
-        _clients.Clear();
-
+        // 先にリスナーを停止して新規接続とAcceptLoopを中断
         try
         {
             _listener?.Stop();
@@ -101,26 +105,39 @@ public sealed class AudioStreamServer : IAudioStreamServer
             _logger.LogDebug(ex, "リスナー停止中のエラー");
         }
 
+        // すべてのクライアントを切断
+        foreach (var client in _clients.Values.ToArray())
+        {
+            try { client.Close(); } catch { /* 無視 */ }
+        }
+        _clients.Clear();
+
+        if (_broadcastTask is not null)
+        {
+            _broadcastChannel.Writer.TryComplete();
+            try
+            {
+                await _broadcastTask.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { _logger.LogDebug(ex, "ブロードキャストタスク停止中の例外"); }
+        }
+
         if (_acceptTask is not null)
         {
             try
             {
-                await _acceptTask.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
+                await _acceptTask.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
             }
-            catch (TimeoutException)
-            {
-                _logger.LogWarning("接続受付タスクの停止がタイムアウトしました");
-            }
-            catch (OperationCanceledException)
-            {
-                // キャンセルは正常
-            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { _logger.LogDebug(ex, "受付タスク停止中の例外"); }
         }
 
         _serverTokenSource?.Dispose();
         _serverTokenSource = null;
         _listener = null;
         _acceptTask = null;
+        _broadcastTask = null;
 
         _logger.LogInformation("音声ストリーミングサーバーを停止");
     }
@@ -182,48 +199,76 @@ public sealed class AudioStreamServer : IAudioStreamServer
 
     private void OnAudioAvailable(object? sender, AudioEventArgs e)
     {
-        // 配信処理 (キャプチャスレッドのブロッキングを避けるためバックグラウンドで実行)
-        _ = Task.Run(async () =>
+        var audio = e.Audio;
+
+        // フレーミング: [4byte長さ][8byteタイムスタンプ][PCMデータ]
+        var dataLength = audio.PcmData.Length;
+        var frameBuffer = new byte[4 + 8 + dataLength];
+
+        BitConverter.TryWriteBytes(frameBuffer.AsSpan(0, 4), dataLength);
+        BitConverter.TryWriteBytes(frameBuffer.AsSpan(4, 8), audio.Timestamp);
+        audio.PcmData.CopyTo(frameBuffer, 12);
+
+        // キューに追加
+        _broadcastChannel.Writer.TryWrite(frameBuffer);
+    }
+
+    private async Task ProcessBroadcastQueueAsync(CancellationToken cancellationToken)
+    {
+        try
         {
-            var audio = e.Audio;
-
-            // フレーミング: [4byte長さ][8byteタイムスタンプ][PCMデータ]
-            var dataLength = audio.PcmData.Length;
-            var frameBuffer = new byte[4 + 8 + dataLength];
-
-            // 長さ (Little Endian)
-            BitConverter.TryWriteBytes(frameBuffer.AsSpan(0, 4), dataLength);
-
-            // タイムスタンプ (Little Endian)
-            BitConverter.TryWriteBytes(frameBuffer.AsSpan(4, 8), audio.Timestamp);
-
-            // PCMデータ
-            audio.PcmData.CopyTo(frameBuffer, 12);
-
-            // すべてのクライアントに配信
-            var clients = _clients.ToArray();
-            foreach (var (clientId, client) in clients)
+            await foreach (var frameBuffer in _broadcastChannel.Reader.ReadAllAsync(cancellationToken))
             {
-                if (!client.Connected || _serverTokenSource?.IsCancellationRequested == true)
-                {
-                    _ = _clients.TryRemove(clientId, out _);
-                    continue;
-                }
+                Interlocked.Add(ref _totalBytesSent, frameBuffer.Length);
+                Interlocked.Increment(ref _totalPacketsSent);
 
-                try
+                // すべてのクライアントに配信
+                var clients = _clients.ToArray();
+                foreach (var (clientId, client) in clients)
                 {
-                    var stream = client.GetStream();
-                    await stream.WriteAsync(frameBuffer, _serverTokenSource?.Token ?? CancellationToken.None);
-                    await stream.FlushAsync(_serverTokenSource?.Token ?? CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "音声クライアント {ClientId} へのデータ送信エラー", clientId);
-                    _ = _clients.TryRemove(clientId, out _);
-                    try { client.Close(); } catch { /* 無視 */ }
+                    if (!client.Connected || cancellationToken.IsCancellationRequested)
+                    {
+                        _ = _clients.TryRemove(clientId, out _);
+                        continue;
+                    }
+
+                    try
+                    {
+                        var stream = client.GetStream();
+                        await stream.WriteAsync(frameBuffer, cancellationToken);
+                        await stream.FlushAsync(cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "音声クライアント {ClientId} へのデータ送信エラー", clientId);
+                        _ = _clients.TryRemove(clientId, out _);
+                        try { client.Close(); } catch { /* 無視 */ }
+                    }
                 }
             }
-        });
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _logger.LogError(ex, "ブロードキャストキュー処理エラー"); }
+    }
+
+    private async Task LogStatsAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(1000, cancellationToken);
+                var bytes = Interlocked.Exchange(ref _totalBytesSent, 0);
+                var packets = Interlocked.Exchange(ref _totalPacketsSent, 0);
+                if (packets > 0 || _clients.Count > 0)
+                {
+                    _logger.LogDebug("音声配信統計: {Packets} パケット, {Bytes} バイト, 接続数 {Clients}", 
+                        packets, bytes, _clients.Count);
+                }
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex) { _logger.LogError(ex, "統計ログ出力エラー"); }
+        }
     }
 
     /// <inheritdoc/>

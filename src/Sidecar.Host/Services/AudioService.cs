@@ -23,7 +23,13 @@ public sealed class AudioService : IAudioService
     private BufferedWaveProvider? _captureProvider;
     private IWaveProvider? _conversionStream;
     private byte[] _conversionBuffer = new byte[4096]; // 低遅延化のためバッファサイズを縮小
+    private long _totalBytesCaptured;
+    private long _totalBytesConverted;
     private bool _disposed;
+#if DEBUG
+    private Task? _statsTask;
+    private CancellationTokenSource? _statsCts;
+#endif
 
     /// <inheritdoc/>
     public event EventHandler<AudioEventArgs>? AudioAvailable;
@@ -152,6 +158,11 @@ public sealed class AudioService : IAudioService
         // 16-bit PCMへの変換
         _conversionStream = new SampleToWaveProvider16(sampleProvider);
 
+#if DEBUG
+        _statsCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _statsTask = LogStatsAsync(_statsCts.Token);
+#endif
+
         _waveIn.StartRecording();
         return Task.CompletedTask;
     }
@@ -178,6 +189,17 @@ public sealed class AudioService : IAudioService
             _waveIn = null;
         }
 
+#if DEBUG
+        if (_statsCts != null)
+        {
+            _statsCts.Cancel();
+            _statsTask?.Wait(TimeSpan.FromSeconds(1));
+            _statsCts.Dispose();
+            _statsCts = null;
+            _statsTask = null;
+        }
+#endif
+
         (_conversionStream as IDisposable)?.Dispose();
         _conversionStream = null;
         _captureProvider = null;
@@ -194,6 +216,7 @@ public sealed class AudioService : IAudioService
         {
             // キャプチャデータをバッファに追加
             _captureProvider.AddSamples(e.Buffer, 0, e.BytesRecorded);
+            Interlocked.Add(ref _totalBytesCaptured, e.BytesRecorded);
 
             // ターゲットフォーマットへ変換して読み取り (可能な限り多くのデータを取得)
             int totalRead = 0;
@@ -213,6 +236,7 @@ public sealed class AudioService : IAudioService
 
                 AudioAvailable?.Invoke(this, new AudioEventArgs(audioData));
             }
+            Interlocked.Add(ref _totalBytesConverted, totalRead);
 
             if (totalRead == 0 && e.BytesRecorded > 0)
             {
@@ -259,5 +283,25 @@ public sealed class AudioService : IAudioService
         _conversionStream = null;
 
         _disposed = true;
+    }
+
+    private async Task LogStatsAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(1000, cancellationToken);
+                var captured = Interlocked.Exchange(ref _totalBytesCaptured, 0);
+                var converted = Interlocked.Exchange(ref _totalBytesConverted, 0);
+                if (captured > 0 || converted > 0)
+                {
+                    _logger.LogDebug("音声キャプチャ統計: キャプチャ {Captured} バイト, 変換後 {Converted} バイト", 
+                        captured, converted);
+                }
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex) { _logger.LogError(ex, "統計ログ出力エラー"); }
+        }
     }
 }

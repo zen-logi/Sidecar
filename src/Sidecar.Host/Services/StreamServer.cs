@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Sidecar.Host.Interfaces;
 using Sidecar.Shared;
@@ -29,6 +30,13 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
     private TcpListener? _listener;
     private CancellationTokenSource? _serverTokenSource;
     private Task? _acceptTask;
+    private Task? _broadcastTask;
+    private readonly Channel<byte[]> _broadcastChannel = Channel.CreateBounded<byte[]>(
+        new BoundedChannelOptions(StreamingConstants.VideoQueueLimit) 
+        { 
+            FullMode = BoundedChannelFullMode.DropOldest, 
+            SingleReader = true 
+        });
     private bool _disposed;
 
     /// <inheritdoc />
@@ -55,6 +63,7 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
         // フレーム受信イベントを購読
         _cameraService.FrameAvailable += OnFrameAvailable;
 
+        _broadcastTask = ProcessBroadcastQueueAsync(_serverTokenSource.Token);
         _acceptTask = AcceptClientsAsync(_serverTokenSource.Token);
 
         _logger.LogInformation("ストリーミングサーバーをポート {Port} で開始", port);
@@ -72,21 +81,7 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
             await _serverTokenSource.CancelAsync();
         }
 
-        // すべてのクライアントを切断（スナップショットを使用）
-        foreach (var client in _clients.Values.ToArray())
-        {
-            try
-            {
-                client.Close();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "クライアント切断中のエラー");
-            }
-        }
-
-        _clients.Clear();
-
+        // 先にリスナーを停止して新規接続とAcceptLoopを中断
         try
         {
             _listener?.Stop();
@@ -96,26 +91,39 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
             _logger.LogDebug(ex, "リスナー停止中のエラー");
         }
 
+        // すべてのクライアントを切断
+        foreach (var client in _clients.Values.ToArray())
+        {
+            try { client.Close(); } catch { /* 無視 */ }
+        }
+        _clients.Clear();
+
+        if (_broadcastTask is not null)
+        {
+            _broadcastChannel.Writer.TryComplete();
+            try
+            {
+                await _broadcastTask.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { _logger.LogDebug(ex, "ブロードキャストタスク停止中の例外"); }
+        }
+
         if (_acceptTask is not null)
         {
             try
             {
-                await _acceptTask.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
+                await _acceptTask.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
             }
-            catch (TimeoutException)
-            {
-                _logger.LogWarning("接続受付タスクの停止がタイムアウトしました");
-            }
-            catch (OperationCanceledException)
-            {
-                // キャンセルは正常
-            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { _logger.LogDebug(ex, "受付タスク停止中の例外"); }
         }
 
         _serverTokenSource?.Dispose();
         _serverTokenSource = null;
         _listener = null;
         _acceptTask = null;
+        _broadcastTask = null;
 
         _logger.LogInformation("ストリーミングサーバーを停止");
     }
@@ -202,44 +210,56 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
     /// </summary>
     private void OnFrameAvailable(object? sender, FrameEventArgs e)
     {
-        // 配信処理 (キャプチャスレッドのブロッキングを避けるためバックグラウンドで実行)
-        _ = Task.Run(async () =>
+        var frame = e.Frame;
+        var boundary = $"\r\n{StreamingConstants.MjpegBoundary}\r\n" +
+                       $"Content-Type: image/jpeg\r\n" +
+                       $"Content-Length: {frame.JpegData.Length}\r\n" +
+                       $"\r\n";
+
+        var boundaryBytes = Encoding.ASCII.GetBytes(boundary);
+        
+        // 境界とフレームデータを結合
+        var buffer = new byte[boundaryBytes.Length + frame.JpegData.Length];
+        boundaryBytes.CopyTo(buffer, 0);
+        frame.JpegData.CopyTo(buffer, boundaryBytes.Length);
+
+        // キューに追加
+        _broadcastChannel.Writer.TryWrite(buffer);
+    }
+
+    private async Task ProcessBroadcastQueueAsync(CancellationToken cancellationToken)
+    {
+        try
         {
-            var frame = e.Frame;
-            var boundary = $"\r\n{StreamingConstants.MjpegBoundary}\r\n" +
-                           $"Content-Type: image/jpeg\r\n" +
-                           $"Content-Length: {frame.JpegData.Length}\r\n" +
-                           $"\r\n";
-
-            var boundaryBytes = Encoding.ASCII.GetBytes(boundary);
-
-            // すべてのクライアントに配信
-            var clients = _clients.ToArray();
-            foreach (var (clientId, client) in clients)
+            await foreach (var data in _broadcastChannel.Reader.ReadAllAsync(cancellationToken))
             {
-                if (!client.Connected || _serverTokenSource?.IsCancellationRequested == true)
+                // すべてのクライアントに配信
+                var clients = _clients.ToArray();
+                foreach (var (clientId, client) in clients)
                 {
-                    _ = _clients.TryRemove(clientId, out _);
-                    continue;
-                }
+                    if (!client.Connected || cancellationToken.IsCancellationRequested)
+                    {
+                        _ = _clients.TryRemove(clientId, out _);
+                        continue;
+                    }
 
-                try
-                {
-                    var stream = client.GetStream();
-
-                    // 境界文字列とフレームデータを非同期で送信
-                    await stream.WriteAsync(boundaryBytes, _serverTokenSource?.Token ?? CancellationToken.None);
-                    await stream.WriteAsync(frame.JpegData, _serverTokenSource?.Token ?? CancellationToken.None);
-                    await stream.FlushAsync(_serverTokenSource?.Token ?? CancellationToken.None);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "クライアント {ClientId} へのフレーム送信エラー", clientId);
-                    _ = _clients.TryRemove(clientId, out _);
-                    try { client.Close(); } catch { /* 無視 */ }
+                    try
+                    {
+                        var stream = client.GetStream();
+                        await stream.WriteAsync(data, cancellationToken);
+                        await stream.FlushAsync(cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "クライアント {ClientId} へのフレーム送信エラー", clientId);
+                        _ = _clients.TryRemove(clientId, out _);
+                        try { client.Close(); } catch { /* 無視 */ }
+                    }
                 }
             }
-        });
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _logger.LogError(ex, "ビデオブロードキャストキュー処理エラー"); }
     }
 
     /// <summary>

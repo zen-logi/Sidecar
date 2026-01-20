@@ -52,6 +52,12 @@ public static class StreamingConstants
     /// </summary>
     public const int DefaultAudioPort = 8555;
 
+    /// <summary>ビデオ配信キューの最大数 (滞留時に古いフレームを破棄)</summary>
+    public const int VideoQueueLimit = 15;
+
+    /// <summary>音声配信キューの最大数 (滞留時に古いパケットを破棄)</summary>
+    public const int AudioQueueLimit = 50;
+
     /// <summary>
     /// 音声サンプリングレート（Hz）
     /// </summary>

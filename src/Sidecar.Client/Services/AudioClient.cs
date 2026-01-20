@@ -6,6 +6,7 @@ using System.Net.Sockets;
 using Sidecar.Client.Interfaces;
 using Sidecar.Shared;
 using Sidecar.Shared.Models;
+using Microsoft.Extensions.Logging;
 
 namespace Sidecar.Client.Services;
 
@@ -15,14 +16,29 @@ namespace Sidecar.Client.Services;
 public sealed class AudioClient : IAudioClient
 {
     private TcpClient? _client;
+    private readonly ILogger<AudioClient> _logger; // Added
     private NetworkStream? _stream;
-    private CancellationTokenSource? _receiveTokenSource;
+    private CancellationTokenSource? _cts; // Renamed from _receiveTokenSource
     private Task? _receiveTask;
+    private long _totalBytesReceived; // Added
+    private long _totalPacketsReceived; // Added
+#if DEBUG
+    private Task? _statsTask; // Added
+#endif
     private ConnectionState _state = ConnectionState.Disconnected;
     private bool _disposed;
 
     /// <inheritdoc />
     public event EventHandler<AudioEventArgs>? AudioReceived;
+
+    /// <summary>
+    /// AudioClientの新しいインスタンスを初期化
+    /// </summary>
+    /// <param name="logger">ロガー</param>
+    public AudioClient(ILogger<AudioClient> logger) // Added constructor
+    {
+        _logger = logger;
+    }
 
     /// <inheritdoc />
     public ConnectionState State
@@ -58,16 +74,21 @@ public sealed class AudioClient : IAudioClient
             _stream = _client.GetStream();
             State = ConnectionState.Connected;
 
-            _receiveTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            _receiveTask = Task.Run(() => ReceiveLoop(_receiveTokenSource.Token), _receiveTokenSource.Token);
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); // Renamed
+            _receiveTask = Task.Run(() => ReceiveLoop(_cts.Token), _cts.Token); // Renamed
+#if DEBUG
+            _statsTask = Task.Run(() => LogStatsAsync(_cts.Token), _cts.Token); // Added
+#endif
+            _logger.LogInformation("音声サーバーに接続: {Host}:{Port}", host, port); // Added
         }
         catch (OperationCanceledException)
         {
             State = ConnectionState.Disconnected;
             throw;
         }
-        catch (Exception)
+        catch (Exception ex) // Added ex
         {
+            _logger.LogError(ex, "音声サーバーへの接続に失敗: {Host}:{Port}", host, port); // Added
             State = ConnectionState.Error;
             throw;
         }
@@ -76,8 +97,11 @@ public sealed class AudioClient : IAudioClient
     /// <inheritdoc />
     public void Disconnect()
     {
-        _receiveTokenSource?.Cancel();
+        _cts?.Cancel(); // Renamed
         _receiveTask?.Wait(TimeSpan.FromSeconds(2));
+#if DEBUG
+        _statsTask?.Wait(TimeSpan.FromSeconds(2)); // Added
+#endif
 
         _stream?.Dispose();
         _stream = null;
@@ -85,11 +109,15 @@ public sealed class AudioClient : IAudioClient
         _client?.Dispose();
         _client = null;
 
-        _receiveTokenSource?.Dispose();
-        _receiveTokenSource = null;
+        _cts?.Dispose(); // Renamed
+        _cts = null;
         _receiveTask = null;
+#if DEBUG
+        _statsTask = null; // Added
+#endif
 
         State = ConnectionState.Disconnected;
+        _logger.LogInformation("音声サーバーから切断"); // Added
     }
 
     private async Task ReceiveLoop(CancellationToken cancellationToken)
@@ -101,7 +129,7 @@ public sealed class AudioClient : IAudioClient
             while (!cancellationToken.IsCancellationRequested && _stream is not null)
             {
                 // ヘッダーを読み込む
-                if (!await ReadExactAsync(_stream, headerBuffer, cancellationToken))
+                if (!await ReadExactAsync(_stream, headerBuffer, cancellationToken)) // Kept ReadExactAsync for header
                 {
                     break;
                 }
@@ -111,15 +139,20 @@ public sealed class AudioClient : IAudioClient
 
                 if (dataLength <= 0 || dataLength > 1024 * 1024) // 1MB制限（異常データ防止）
                 {
+                    _logger.LogWarning("無効なデータ長を受信: {DataLength}", dataLength); // Added
                     continue;
                 }
 
                 // PCMデータを読み込む
                 var pcmData = new byte[dataLength];
-                if (!await ReadExactAsync(_stream, pcmData, cancellationToken))
-                {
-                    break;
-                }
+                // if (!await ReadExactAsync(_stream, pcmData, cancellationToken)) // Original
+                // {
+                //     break;
+                // }
+                await _stream.ReadExactlyAsync(pcmData, cancellationToken); // Changed to ReadExactlyAsync
+
+                Interlocked.Add(ref _totalBytesReceived, dataLength); // Added
+                Interlocked.Increment(ref _totalPacketsReceived); // Added
 
                 var audioData = new AudioData(
                     pcmData,
@@ -154,6 +187,25 @@ public sealed class AudioClient : IAudioClient
             totalRead += read;
         }
         return true;
+    }
+
+    private async Task LogStatsAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(1000, cancellationToken);
+                var bytes = Interlocked.Exchange(ref _totalBytesReceived, 0);
+                var packets = Interlocked.Exchange(ref _totalPacketsReceived, 0);
+                if (packets > 0)
+                {
+                    _logger.LogDebug("音声受信統計: {Packets} パケット, {Bytes} バイト", packets, bytes);
+                }
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex) { _logger.LogError(ex, "統計ログ出力エラー"); }
+        }
     }
 
     /// <inheritdoc />
