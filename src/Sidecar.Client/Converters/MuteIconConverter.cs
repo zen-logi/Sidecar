@@ -7,7 +7,7 @@ using System.Globalization;
 namespace Sidecar.Client.Converters;
 
 /// <summary>
-/// ミュート状態をアイコン文字（Unicode）に変換するコンバーター。
+/// ミュート状態をアイコン文字（Unicode）に変換するコンバーター
 /// </summary>
 public sealed class MuteIconConverter : IValueConverter
 {

@@ -269,7 +269,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     public event EventHandler<byte[]>? FrameUpdated;
 
     /// <summary>
-    /// サーバーへ接続します。
+    /// 接続
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanConnect))]
     private async Task ConnectAsync()
@@ -293,24 +293,44 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
         {
             _connectionTokenSource = new CancellationTokenSource();
             
-            // ビデオとオーディオを並行して接続
-            var videoTask = _streamClient.ConnectAsync(HostAddress, portNumber, _connectionTokenSource.Token);
-            var audioTask = _audioClient.ConnectAsync(HostAddress, portNumber + 1, _connectionTokenSource.Token);
+            // ビデオ接続
+            await _streamClient.ConnectAsync(HostAddress, portNumber, _connectionTokenSource.Token);
 
-            await Task.WhenAll(videoTask, audioTask);
-
-            // 音声再生開始
-            _audioPlayer.Start(StreamingConstants.AudioSampleRate, StreamingConstants.AudioChannels);
+            // オーディオ接続は試行するが、失敗してもビデオが繋がっていれば続行する
+            bool audioConnected = false;
+            try
+            {
+                // 音声接続タイムアウトを少し短く設定（5秒）
+                using var audioCts = new CancellationTokenSource(5000);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_connectionTokenSource.Token, audioCts.Token);
+                
+                await _audioClient.ConnectAsync(HostAddress, portNumber + 1, linkedCts.Token);
+                _audioPlayer.Start(StreamingConstants.AudioSampleRate, StreamingConstants.AudioChannels);
+                audioConnected = true;
+            }
+            catch (Exception)
+            {
+                // 音声接続失敗。ログを出力して続行
+            }
 
             IsConnected = true;
-            StatusMessage = $"{HostAddress} に接続済み (Port: {portNumber}, {portNumber + 1})";
+            if (audioConnected)
+            {
+                StatusMessage = $"{HostAddress} に接続済み (映像+音声)";
+            }
+            else
+            {
+                StatusMessage = $"{HostAddress} に接続済み (映像のみ)";
+            }
         }
         catch (OperationCanceledException)
         {
+            Disconnect();
             StatusMessage = "接続がキャンセルされました";
         }
         catch (Exception ex)
         {
+            Disconnect();
             StatusMessage = $"接続エラー: {ex.Message}";
         }
         finally
@@ -326,7 +346,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// 接続を切断します。
+    /// 接続を切断
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanDisconnect))]
     private void Disconnect()

@@ -13,7 +13,7 @@ using Sidecar.Shared.Models;
 namespace Sidecar.Host.Services;
 
 /// <summary>
-/// TCPベースの音声ストリーミングサーバー。
+/// TCPベースの音声ストリーミングサーバー
 /// </summary>
 public sealed class AudioStreamServer : IAudioStreamServer
 {
@@ -32,10 +32,10 @@ public sealed class AudioStreamServer : IAudioStreamServer
     public bool IsRunning => _acceptTask is not null && !_acceptTask.IsCompleted;
 
     /// <summary>
-    /// <see cref="AudioStreamServer"/> クラスの新しいインスタンスを初期化します。
+    /// <see cref="AudioStreamServer"/> クラスの新しいインスタンスを初期化
     /// </summary>
-    /// <param name="audioService">音声サービス。</param>
-    /// <param name="logger">ロガー。</param>
+    /// <param name="audioService">音声サービス</param>
+    /// <param name="logger">ロガー</param>
     public AudioStreamServer(IAudioService audioService, ILogger<AudioStreamServer> logger)
     {
         _audioService = audioService ?? throw new ArgumentNullException(nameof(audioService));
@@ -49,7 +49,7 @@ public sealed class AudioStreamServer : IAudioStreamServer
 
         if (IsRunning)
         {
-            throw new InvalidOperationException("音声サーバーは既に実行中です。");
+            throw new InvalidOperationException("音声サーバーは既に実行中")
         }
 
         _listener = new TcpListener(IPAddress.Any, port);
@@ -62,7 +62,7 @@ public sealed class AudioStreamServer : IAudioStreamServer
 
         _acceptTask = AcceptClientsAsync(_serverTokenSource.Token);
 
-        _logger.LogInformation("音声ストリーミングサーバーがポート {Port} で開始しました", port);
+        _logger.LogInformation("音声ストリーミングサーバーをポート {Port} で開始", port);
 
         return Task.CompletedTask;
     }
@@ -122,7 +122,7 @@ public sealed class AudioStreamServer : IAudioStreamServer
         _listener = null;
         _acceptTask = null;
 
-        _logger.LogInformation("音声ストリーミングサーバーが停止しました");
+        _logger.LogInformation("音声ストリーミングサーバーを停止");
     }
 
     private async Task AcceptClientsAsync(CancellationToken cancellationToken)

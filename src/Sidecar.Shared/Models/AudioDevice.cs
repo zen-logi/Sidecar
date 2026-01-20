@@ -5,7 +5,7 @@
 namespace Sidecar.Shared.Models;
 
 /// <summary>
-/// 音声デバイスの種類。
+/// 音声デバイスの種類
 /// </summary>
 public enum AudioDeviceType
 {
@@ -31,13 +31,13 @@ public enum AudioDeviceType
 }
 
 /// <summary>
-/// 音声デバイスを表すモデル。
+/// 音声デバイスを表すモデル
 /// </summary>
-/// <param name="Id">デバイスの一意識別子。</param>
-/// <param name="Name">デバイスの表示名。</param>
-/// <param name="Type">デバイスの種類。</param>
+/// <param name="Id">デバイスの一意識別子</param>
+/// <param name="Name">デバイスの表示名</param>
+/// <param name="Type">デバイスの種類</param>
 public record AudioDevice(string Id, string Name, AudioDeviceType Type)
 {
     /// <inheritdoc/>
-    public override string ToString() => $"[{Type}] {Name}";
+    public override string ToString() => Name;
 }

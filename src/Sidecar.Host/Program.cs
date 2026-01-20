@@ -45,19 +45,18 @@ Console.CancelKeyPress += (_, e) =>
 try
 {
     // ==================== カメラ選択 ====================
-    logger.LogInformation("利用可能なカメラデバイスを検索中...");
+    logger.LogInformation("利用可能なカメラデバイスを検索中");
     var cameras = cameraService.GetAvailableDevices();
 
     if (cameras.Count == 0)
     {
-        logger.LogError("利用可能なカメラデバイスが見つかりません");
+        logger.LogError("利用可能なカメラデバイスが見つからない");
         return 1;
     }
 
-    Console.WriteLine($"\n{cameras.Count} 個のカメラデバイスが見つかりました:");
-    for (int i = 0; i < cameras.Count; i++)
+    foreach (var camera in cameras)
     {
-        Console.WriteLine($"  [{i}] {cameras[i]}");
+        Console.WriteLine($"  [{camera.Index}] {camera.Name}");
     }
 
     int selectedCameraIndex;
@@ -68,36 +67,35 @@ try
     }
     else
     {
-        Console.Write("\n使用するカメラのインデックスを入力してください: ");
+        Console.Write("\n使用するカメラのインデックスを入力: ");
         var input = Console.ReadLine();
 
         if (!int.TryParse(input, out selectedCameraIndex))
         {
-            logger.LogError("無効な入力です");
+            logger.LogError("無効な入力");
             return 1;
         }
     }
 
     if (selectedCameraIndex < 0 || selectedCameraIndex >= cameras.Count)
     {
-        logger.LogError("カメラインデックス {Index} は存在しません", selectedCameraIndex);
+        logger.LogError("カメラインデックス {Index} は存在しない", selectedCameraIndex);
         return 1;
     }
 
     // ==================== 音声デバイス選択 ====================
-    logger.LogInformation("利用可能な音声デバイスを検索中...");
+    logger.LogInformation("利用可能な音声デバイスを検索中");
     var audioDevices = audioService.GetAvailableDevices();
 
     string? selectedAudioDeviceId = null;
     if (audioDevices.Count > 0)
     {
-        Console.WriteLine($"\n{audioDevices.Count} 個の音声デバイスが見つかりました:");
         for (int i = 0; i < audioDevices.Count; i++)
         {
-            Console.WriteLine($"  [{i}] {audioDevices[i]}");
+            Console.WriteLine($"  [{i}] {audioDevices[i].Name}");
         }
 
-        Console.Write("\n使用する音声デバイスのインデックスを入力してください (スキップ: Enter): ");
+        Console.Write("\n使用する音声デバイスのインデックスを入力 (スキップ: Enter): ");
         var audioInput = Console.ReadLine();
 
         if (!string.IsNullOrWhiteSpace(audioInput) && int.TryParse(audioInput, out var audioIndex))
@@ -110,7 +108,7 @@ try
     }
     else
     {
-        logger.LogWarning("利用可能な音声デバイスが見つかりません。音声ストリーミングは無効です。");
+        logger.LogWarning("利用可能な音声デバイスが見つからない。音声ストリーミングは無効");
     }
 
     // ==================== ポート番号の取得 ====================
@@ -139,7 +137,7 @@ try
     {
         Console.WriteLine($"オーディオ: tcp://<このPCのIPアドレス>:{audioPort}");
     }
-    Console.WriteLine("Ctrl+C で終了します。\n");
+    Console.WriteLine("Ctrl+C で終了\n");
 
     // メインループ
     while (!cts.Token.IsCancellationRequested)
@@ -162,17 +160,17 @@ catch (OperationCanceledException)
 }
 catch (Exception ex)
 {
-    logger.LogError(ex, "予期しないエラーが発生しました");
+    logger.LogError(ex, "予期しないエラーが発生");
     return 1;
 }
 finally
 {
-    Console.WriteLine("\nサーバーを停止しています...");
+    Console.WriteLine("\nサーバーを停止中...");
     await audioStreamServer.StopAsync(CancellationToken.None);
     await audioService.StopCaptureAsync(CancellationToken.None);
     await streamServer.StopAsync(CancellationToken.None);
     await cameraService.StopCaptureAsync(CancellationToken.None);
-    Console.WriteLine("終了しました。");
+    Console.WriteLine("終了");
 }
 
 return 0;

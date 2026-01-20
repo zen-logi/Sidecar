@@ -11,7 +11,7 @@ using NAudio.Wave;
 namespace Sidecar.Client.Services;
 
 /// <summary>
-/// 音声再生サービスの実装。
+/// Windows環境におけるNAudioを使用した音声再生サービス
 /// </summary>
 public sealed class AudioPlayerService : IAudioPlayerService
 {
@@ -60,7 +60,9 @@ public sealed class AudioPlayerService : IAudioPlayerService
     /// <inheritdoc />
     public bool IsPlaying => _isPlaying;
 
-    /// <inheritdoc />
+    /// <summary>
+    /// 音声再生を開始
+    /// </summary>
     public void Start(int sampleRate, int channels)
     {
         if (_isPlaying) return;
@@ -83,7 +85,9 @@ public sealed class AudioPlayerService : IAudioPlayerService
         _isPlaying = true;
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// 音声再生を停止
+    /// </summary>
     public void Stop()
     {
         if (!_isPlaying) return;

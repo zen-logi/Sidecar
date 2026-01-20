@@ -10,7 +10,7 @@ using Sidecar.Shared.Models;
 namespace Sidecar.Client.Services;
 
 /// <summary>
-/// 音声ストリームを受信するTCPクライアント。
+/// 音声ストリーミングクライアントの実装
 /// </summary>
 public sealed class AudioClient : IAudioClient
 {

@@ -5,7 +5,7 @@
 namespace Sidecar.Host.Interfaces;
 
 /// <summary>
-/// 音声ストリームを配信するサーバーのインターフェース。
+/// 音声ストリームを配信するサーバーのインターフェース
 /// </summary>
 public interface IAudioStreamServer : IDisposable
 {
@@ -18,19 +18,19 @@ public interface IAudioStreamServer : IDisposable
     Task StartAsync(int port, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// サーバーを停止します。
+    /// サーバーを停止
     /// </summary>
-    /// <param name="cancellationToken">キャンセルトークン。</param>
-    /// <returns>非同期操作を表すタスク。</returns>
+    /// <param name="cancellationToken">キャンセルトークン</param>
+    /// <returns>非同期操作を表すタスク</returns>
     Task StopAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 接続中のクライアント数を取得します。
+    /// 接続中のクライアント数を取得
     /// </summary>
     int ConnectedClientCount { get; }
 
     /// <summary>
-    /// サーバーが実行中かどうかを取得します。
+    /// サーバーが実行中かどうかを取得
     /// </summary>
     bool IsRunning { get; }
 }

@@ -12,7 +12,7 @@ using Sidecar.Shared.Models;
 namespace Sidecar.Host.Services;
 
 /// <summary>
-/// NAudioを使用した音声キャプチャサービス。
+/// NAudioを使用した音声キャプチャサービス
 /// </summary>
 public sealed class AudioService : IAudioService
 {
@@ -30,6 +30,7 @@ public sealed class AudioService : IAudioService
     /// <summary>
     /// <see cref="AudioService"/> クラスの新しいインスタンスを初期化
     /// </summary>
+    /// <param name="logger">ロガー</param>
     public AudioService(ILogger<AudioService> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -80,7 +81,7 @@ public sealed class AudioService : IAudioService
     {
         if (_waveIn is not null)
         {
-            throw new InvalidOperationException("既にキャプチャ中です。");
+            throw new InvalidOperationException("既にキャプチャ中")
         }
 
         // ターゲットフォーマット: 48kHz, 16bit, Stereo
@@ -151,7 +152,7 @@ public sealed class AudioService : IAudioService
             _waveIn = null;
         }
 
-        _logger.LogInformation("音声キャプチャを停止しました。");
+        _logger.LogInformation("音声キャプチャを停止");
         return Task.CompletedTask;
     }
 
@@ -177,7 +178,7 @@ public sealed class AudioService : IAudioService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "音声データ処理中にエラーが発生しました。");
+            _logger.LogError(ex, "音声データ処理中にエラーが発生");
         }
     }
 
@@ -185,7 +186,7 @@ public sealed class AudioService : IAudioService
     {
         if (e.Exception is not null)
         {
-            _logger.LogError(e.Exception, "録音中にエラーが発生しました。");
+            _logger.LogError(e.Exception, "録音中にエラーが発生");
         }
     }
 
