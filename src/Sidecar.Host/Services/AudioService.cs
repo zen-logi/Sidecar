@@ -19,6 +19,9 @@ public sealed class AudioService : IAudioService
     private readonly ILogger<AudioService> _logger;
     private IWaveIn? _waveIn;
     private WaveFormat? _targetFormat;
+    private BufferedWaveProvider? _captureProvider;
+    private IWaveProvider? _conversionStream;
+    private byte[] _conversionBuffer = new byte[StreamingConstants.AudioReceiveBufferSize];
     private bool _disposed;
 
     /// <inheritdoc/>
@@ -126,6 +129,19 @@ public sealed class AudioService : IAudioService
             _logger.LogInformation("WASAPI キャプチャを開始: {DeviceName}", device.FriendlyName);
         }
 
+        // 変換用プロバイダーの設定
+        _captureProvider = new BufferedWaveProvider(_waveIn.WaveFormat)
+        {
+            DiscardOnBufferOverflow = true,
+            BufferDuration = TimeSpan.FromSeconds(1)
+        };
+
+        // 32-bit Float -> 16-bit PCM & リサンプリング (48kHz固定)
+        _conversionStream = new MediaFoundationResampler(_captureProvider, _targetFormat)
+        {
+            ResamplerQuality = 60 // 高速かつ実用的な品質
+        };
+
         _waveIn.StartRecording();
         return Task.CompletedTask;
     }
@@ -152,33 +168,42 @@ public sealed class AudioService : IAudioService
             _waveIn = null;
         }
 
+        (_conversionStream as IDisposable)?.Dispose();
+        _conversionStream = null;
+        _captureProvider = null;
+
         _logger.LogInformation("音声キャプチャを停止");
         return Task.CompletedTask;
     }
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        if (e.BytesRecorded == 0) return;
+        if (e.BytesRecorded == 0 || _captureProvider == null || _conversionStream == null) return;
 
         try
         {
-            // フォーマット変換が必要な場合はここで行う
-            // 現状は生データをそのまま送信
-            var pcmData = new byte[e.BytesRecorded];
-            Array.Copy(e.Buffer, pcmData, e.BytesRecorded);
+            // キャプチャデータをバッファに追加
+            _captureProvider.AddSamples(e.Buffer, 0, e.BytesRecorded);
 
-            var waveIn = sender as IWaveIn;
-            var audioData = new AudioData(
-                pcmData,
-                waveIn?.WaveFormat.SampleRate ?? StreamingConstants.AudioSampleRate,
-                waveIn?.WaveFormat.Channels ?? StreamingConstants.AudioChannels,
-                DateTime.UtcNow.Ticks);
+            // ターゲットフォーマットへ変換して読み取り
+            int read;
+            while ((read = _conversionStream.Read(_conversionBuffer, 0, _conversionBuffer.Length)) > 0)
+            {
+                var pcmData = new byte[read];
+                Array.Copy(_conversionBuffer, 0, pcmData, 0, read);
 
-            AudioAvailable?.Invoke(this, new AudioEventArgs(audioData));
+                var audioData = new AudioData(
+                    pcmData,
+                    StreamingConstants.AudioSampleRate,
+                    StreamingConstants.AudioChannels,
+                    DateTime.UtcNow.Ticks);
+
+                AudioAvailable?.Invoke(this, new AudioEventArgs(audioData));
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "音声データ処理中にエラーが発生");
+            _logger.LogError(ex, "音声フォーマット変換中にエラーが発生");
         }
     }
 
@@ -209,6 +234,9 @@ public sealed class AudioService : IAudioService
         _waveIn?.StopRecording();
         _waveIn?.Dispose();
         _waveIn = null;
+
+        (_conversionStream as IDisposable)?.Dispose();
+        _conversionStream = null;
 
         _disposed = true;
     }
