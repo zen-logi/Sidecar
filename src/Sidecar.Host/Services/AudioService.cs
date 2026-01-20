@@ -231,25 +231,30 @@ public sealed class AudioService : IAudioService
 
     private void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
-        if (e.BytesRecorded == 0 || _captureProvider == null || _conversionStream == null) return;
+        if (e.BytesRecorded == 0) return;
 
         try
         {
-            // キャプチャデータをバッファに追加
-            _captureProvider.AddSamples(e.Buffer, 0, e.BytesRecorded);
             Interlocked.Add(ref _totalBytesCaptured, e.BytesRecorded);
 
-            // ターゲットフォーマットへ変換して読み取り (可能な限り多くのデータを取得)
-            using var ms = new MemoryStream();
-            int read;
-            while ((read = _conversionStream.Read(_conversionBuffer, 0, _conversionBuffer.Length)) > 0)
+            // 高速パス: 48kHz Float 入力の場合は直接変換 (処理負荷軽減と無限ループ回避)
+            if (_waveIn?.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat &&
+                _waveIn.WaveFormat.SampleRate == StreamingConstants.AudioSampleRate &&
+                _waveIn.WaveFormat.Channels == StreamingConstants.AudioChannels)
             {
-                ms.Write(_conversionBuffer, 0, read);
-            }
+                var pcmData = new byte[e.BytesRecorded / 2];
+                for (int i = 0; i < e.BytesRecorded / 4; i++)
+                {
+                    float sample = BitConverter.ToSingle(e.Buffer, i * 4);
+                    // 範囲制限
+                    if (sample > 1.0f) sample = 1.0f;
+                    else if (sample < -1.0f) sample = -1.0f;
+                    
+                    short s = (short)(sample * 32767);
+                    pcmData[i * 2] = (byte)(s & 0xff);
+                    pcmData[i * 2 + 1] = (byte)((s >> 8) & 0xff);
+                }
 
-            if (ms.Length > 0)
-            {
-                var pcmData = ms.ToArray();
                 var audioData = new AudioData(
                     pcmData,
                     StreamingConstants.AudioSampleRate,
@@ -258,14 +263,44 @@ public sealed class AudioService : IAudioService
 
                 AudioAvailable?.Invoke(this, new AudioEventArgs(audioData));
                 Interlocked.Add(ref _totalBytesConverted, pcmData.Length);
+                return;
             }
 
-            if (ms.Length == 0 && e.BytesRecorded > 0)
+            if (_captureProvider == null || _conversionStream == null) return;
+
+            // キャプチャデータをバッファに追加
+            _captureProvider.AddSamples(e.Buffer, 0, e.BytesRecorded);
+
+            // ターゲットフォーマットへ変換して読み取り (安全のため読み取りループに上限を設定)
+            int totalRead = 0;
+            int iterations = 0;
+            while (iterations < 50) 
             {
-                // リサンプラーがデータを溜めている可能性があるため警告は最小限に
-                _logger.LogTrace("音声変換出力なし: 入力 {InputBytes} バイト, バッファ残量 {BufferedBytes} バイト", 
-                    e.BytesRecorded, _captureProvider.BufferedBytes);
+                int read = _conversionStream.Read(_conversionBuffer, 0, _conversionBuffer.Length);
+                if (read <= 0) break;
+
+                iterations++;
+                totalRead += read;
+
+                var pcmData = new byte[read];
+                Array.Copy(_conversionBuffer, 0, pcmData, 0, read);
+
+                var audioData = new AudioData(
+                    pcmData,
+                    StreamingConstants.AudioSampleRate,
+                    StreamingConstants.AudioChannels,
+                    DateTime.UtcNow.Ticks);
+
+                AudioAvailable?.Invoke(this, new AudioEventArgs(audioData));
+                
+                // 1回のコールバックで1MBを超えるデータは異常として打ち切り
+                if (totalRead > 1024 * 1024) 
+                {
+                    _logger.LogWarning("音声変換データが上限を超えたため読み取りを中断");
+                    break;
+                }
             }
+            Interlocked.Add(ref _totalBytesConverted, totalRead);
         }
         catch (Exception ex)
         {
