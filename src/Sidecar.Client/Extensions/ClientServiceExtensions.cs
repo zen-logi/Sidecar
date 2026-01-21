@@ -26,6 +26,14 @@ public static class ClientServiceExtensions
         services.AddSingleton<IAudioPlayerService, AudioPlayerService>();
         services.AddTransient<MainPageViewModel>();
 
+#if IOS
+        services.AddSingleton<IOrientationService, Platforms.iOS.OrientationService>();
+#elif ANDROID
+        services.AddSingleton<IOrientationService, Platforms.Android.OrientationService>();
+#else
+        services.AddSingleton<IOrientationService, OrientationService>();
+#endif
+
         return services;
     }
 }

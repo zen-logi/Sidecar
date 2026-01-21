@@ -29,6 +29,12 @@ public static class MauiProgram
             {
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
                 fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
+            })
+            .ConfigureMauiHandlers(handlers =>
+            {
+#if IOS
+                handlers.AddHandler(typeof(Sidecar.Client.Controls.NativeVideoView), typeof(Sidecar.Client.Platforms.iOS.NativeVideoViewHandler));
+#endif
             });
 
         // サービス登録

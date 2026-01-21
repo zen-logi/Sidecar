@@ -62,6 +62,11 @@ public partial class MainPage : ContentPage
                         }
                         CanvasView.InvalidateSurface();
                     });
+
+#if IOS
+                    // iOS PiP用のネイティブビューにフレームを供給
+                    NativeViewer.EnqueueFrame(jpegData);
+#endif
                 }
             }
             catch
@@ -83,7 +88,6 @@ public partial class MainPage : ContentPage
     private void OnCanvasViewPaintSurface(object sender, SKPaintSurfaceEventArgs e)
     {
         _isRendering = true;
-
         try
         {
             var canvas = e.Surface.Canvas;
@@ -485,15 +489,19 @@ public partial class MainPage : ContentPage
         float offsetX = 0;
         float offsetY = 0;
 
-        if (srcAspect > destAspect)
+        // 宛先が縦長（ポートレート）か横長（ランドスケープ）かで挙動を変える
+        if (destHeight > destWidth)
         {
-            // 横に合わせる
+            // --- 縦画面 (Portrait) ---
+            // 左右が切れないように、横幅を基準に合わせる (AspectFit相当)
             scale = (float)destWidth / srcWidth;
             offsetY = (destHeight - (srcHeight * scale)) / 2f;
         }
         else
         {
-            // 縦に合わせる
+            // --- 横画面 (Landscape) ---
+            // 画面を埋め尽くすように、高さを基準に合わせる (AspectFill相当)
+            // これにより、ソース側の上下にある余白（紫の帯など）を画面外に追い出す
             scale = (float)destHeight / srcHeight;
             offsetX = (destWidth - (srcWidth * scale)) / 2f;
         }

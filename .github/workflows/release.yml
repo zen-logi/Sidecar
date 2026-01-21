@@ -13,14 +13,34 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    runs-on: windows-latest
-    
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      VERSION: ${{ steps.version.outputs.VERSION }}
+      SHORT_SHA: ${{ steps.version.outputs.SHORT_SHA }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          commitCount=$(git rev-list --count HEAD)
+          shortSha=$(git rev-parse --short HEAD)
+          date=$(date +'%Y.%m.%d')
+          version="v$date.$commitCount"
+          echo "VERSION=$version" >> $GITHUB_OUTPUT
+          echo "SHORT_SHA=$shortSha" >> $GITHUB_OUTPUT
+          echo "Version: $version"
+
+  build-windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -28,29 +48,7 @@ jobs:
           dotnet-version: '10.0.x'
       
       - name: Install MAUI workloads
-        run: dotnet workload install maui-windows android ios maccatalyst
-      
-      - name: Get version
-        id: version
-        shell: pwsh
-        run: |
-          $commitCount = git rev-list --count HEAD
-          $shortSha = git rev-parse --short HEAD
-          $date = Get-Date -Format "yyyy.MM.dd"
-          $version = "v$date.$commitCount"
-          
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          echo "SHORT_SHA=$shortSha" >> $env:GITHUB_OUTPUT
-          Write-Host "Version: $version"
-      
-      - name: Restore Shared
-        run: dotnet restore src/Sidecar.Shared/Sidecar.Shared.csproj
-      
-      - name: Restore Host
-        run: dotnet restore src/Sidecar.Host/Sidecar.Host.csproj
-      
-      - name: Install Inno Setup
-        run: choco install innosetup -y
+        run: dotnet workload install maui-windows
       
       - name: Build Host
         run: |
@@ -75,62 +73,119 @@ jobs:
         run: |
           Compress-Archive -Path ./publish/host/* -DestinationPath ./Sidecar.Host-win-x64.zip
       
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+      
       - name: Build Client Installer
         shell: pwsh
         run: |
-          # Update version in setup.iss
-          $version = "${{ steps.version.outputs.VERSION }}".TrimStart('v')
+          $version = "${{ needs.version.outputs.VERSION }}".TrimStart('v')
           (Get-Content setup.iss) -replace '#define MyAppVersion "1.0.0"', "#define MyAppVersion `"$version`"" | Set-Content setup.iss
-          
-          # Create installer directory
           New-Item -ItemType Directory -Force -Path installer
-          
-          # Build installer
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" setup.iss
       
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            installer/Sidecar.Client-Setup.exe
+            Sidecar.Host-win-x64.zip
+
+  build-macos:
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      
+      - name: Install MAUI workloads
+        run: dotnet workload install maccatalyst
+      
+      - name: Build Client (Mac Catalyst)
+        run: |
+          dotnet publish src/Sidecar.Client/Sidecar.Client.csproj \
+            -c Release \
+            -f net10.0-maccatalyst \
+            -p:CreatePackage=false \
+            -o ./publish/macos
+      
+      - name: Create macOS Installer (.pkg)
+        run: |
+          productbuild --component "./publish/macos/Sidecar.Client.app" /Applications Sidecar.Client-Installer.pkg
+      
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: Sidecar.Client-Installer.pkg
+
+  release:
+    needs: [version, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-artifacts
+      
+      - name: Download macOS Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-artifacts
+
       - name: Check if tag exists
         id: check_tag
-        shell: pwsh
         run: |
-          $tagExists = git tag -l "${{ steps.version.outputs.VERSION }}"
-          if ($tagExists) {
-            echo "TAG_EXISTS=true" >> $env:GITHUB_OUTPUT
-          } else {
-            echo "TAG_EXISTS=false" >> $env:GITHUB_OUTPUT
-          }
+          if git rev-parse "${{ needs.version.outputs.VERSION }}" >/dev/null 2>&1; then
+            echo "TAG_EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "TAG_EXISTS=false" >> $GITHUB_OUTPUT
+          fi
       
       - name: Create Release
         if: steps.check_tag.outputs.TAG_EXISTS == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.VERSION }}
-          name: Release ${{ steps.version.outputs.VERSION }}
+          tag_name: ${{ needs.version.outputs.VERSION }}
+          name: Release ${{ needs.version.outputs.VERSION }}
           body: |
-            ## Sidecar Release ${{ steps.version.outputs.VERSION }}
+            ## Sidecar Release ${{ needs.version.outputs.VERSION }}
             
-            ### 📦 Downloads
+            ### 📦 Downloads (Windows)
             
             | ファイル | 説明 |
             |----------|------|
             | `Sidecar.Client-Setup.exe` | Client インストーラー（視聴側） |
             | `Sidecar.Host-win-x64.zip` | Host 単体（配信側） |
+
+            ### 📦 Downloads (macOS)
+            
+            | ファイル | 説明 |
+            |----------|------|
+            | `Sidecar.Client-Installer.pkg` | Client インストーラー（視聴側） |
             
             ### 📥 インストール方法
             
-            **Client（視聴側）**: `Sidecar.Client-Setup.exe` をダブルクリックで実行
-            
-            **Host（配信側）**: ZIPを解凍して `Sidecar.Host.exe` を実行
+            **Client (Windows)**: `Sidecar.Client-Setup.exe` を実行
+            **Client (macOS)**: `Sidecar.Client-Installer.pkg` を実行
+            **Host (Windows)**: ZIPを解凍して `Sidecar.Host.exe` を実行
             
             ### 🔧 Changes
             
-            Commit: ${{ steps.version.outputs.SHORT_SHA }}
-            
-            ---
-            
-            > 📱 **Android/iOS/macOS**: ソースからビルドしてください。
+            Commit: ${{ needs.version.outputs.SHORT_SHA }}
           files: |
-            installer/Sidecar.Client-Setup.exe
+            Sidecar.Client-Setup.exe
             Sidecar.Host-win-x64.zip
+            Sidecar.Client-Installer.pkg
           draft: false
           prerelease: false
           generate_release_notes: true

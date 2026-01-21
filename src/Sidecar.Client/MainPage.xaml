@@ -4,28 +4,37 @@
              xmlns:skia="clr-namespace:SkiaSharp.Views.Maui.Controls;assembly=SkiaSharp.Views.Maui.Controls"
              xmlns:viewModels="clr-namespace:Sidecar.Client.ViewModels"
              xmlns:converters="clr-namespace:Sidecar.Client.Converters"
+             xmlns:ios="clr-namespace:Microsoft.Maui.Controls.PlatformConfiguration.iOSSpecific;assembly=Microsoft.Maui.Controls"
+             xmlns:controls="clr-namespace:Sidecar.Client.Controls"
              x:Class="Sidecar.Client.MainPage"
+             ios:Page.UseSafeArea="False"
+             NavigationPage.HasNavigationBar="False"
              x:DataType="viewModels:MainPageViewModel"
-             BackgroundColor="#121212">
+             BackgroundColor="Black">
 
     <ContentPage.Resources>
         <ResourceDictionary>
             <converters:MuteIconConverter x:Key="MuteIconConverter" />
+            <converters:BoolToColorConverter x:Key="BoolToColorConverter" />
         </ResourceDictionary>
     </ContentPage.Resources>
 
-    <Grid>
+    <Grid BackgroundColor="Black" IgnoreSafeArea="True">
+        <!-- iOS PiP用レイヤー (非表示) -->
+        <controls:NativeVideoView x:Name="NativeViewer" 
+                                  IsVisible="False" 
+                                  IsPiPActive="{Binding IsPiPActive}" />
+
         <!-- 映像レイヤー -->
         <skia:SKCanvasView x:Name="CanvasView"
                            PaintSurface="OnCanvasViewPaintSurface"
-                           IgnorePixelScaling="True" />
+                           IgnorePixelScaling="True"
+                           BackgroundColor="Black" />
 
         <!-- 接続前UIレイヤー -->
-        <Grid IsVisible="{Binding IsConnected, Converter={StaticResource InvertedBoolConverter}}"
-              RowDefinitions="*,Auto,*"
-              BackgroundColor="#121212">
-            
-            <VerticalStackLayout Grid.Row="1" Spacing="24" HorizontalOptions="Center" WidthRequest="360">
+        <ScrollView IsVisible="{Binding IsConnected, Converter={StaticResource InvertedBoolConverter}}"
+                    BackgroundColor="Black">
+            <VerticalStackLayout Spacing="24" HorizontalOptions="Center" Padding="20,60,20,40" MaximumWidthRequest="400">
                 <Label Text="Sidecar" 
                        FontSize="48" 
                        TextColor="White" 
@@ -37,7 +46,7 @@
                        FontSize="16" 
                        TextColor="#808080" 
                        HorizontalTextAlignment="Center" 
-                       Margin="0,-12,0,32"
+                       Margin="0,-12,0,16"
                        CharacterSpacing="1"/>
 
                 <!-- ホストアドレスとポート入力 -->
@@ -48,7 +57,7 @@
                             Stroke="Transparent" 
                             BackgroundColor="#252525" 
                             Padding="16,8">
-                        <Entry Placeholder="ホストIPアドレス (例: 192.168.1.100)"
+                        <Entry Placeholder="ホストIP"
                                Text="{Binding HostAddress}"
                                IsEnabled="{Binding IsConnected, Converter={StaticResource InvertedBoolConverter}}"
                                TextColor="{AppThemeBinding Light=Black, Dark=White}"
@@ -69,22 +78,23 @@
                 </Grid>
 
                 <!-- カラーモード選択 -->
-                <Grid ColumnDefinitions="*,2*"
-                      ColumnSpacing="12">
-                    <Label Grid.Column="0"
-                           Text="カラーモード:"
-                           VerticalOptions="Center"
-                           TextColor="White"/>
-                    
-                    <Picker Grid.Column="1"
-                            ItemsSource="{Binding ColorModeOptions}"
-                            ItemDisplayBinding="{Binding DisplayName}"
-                            SelectedItem="{Binding SelectedColorModeOption}"
-                            TextColor="{AppThemeBinding Light=Black, Dark=White}"
-                            Title="モードを選択"
-                            BackgroundColor="#252525"
-                            TitleColor="#666666"/>
-                </Grid>
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="カラーモード"
+                           TextColor="White"
+                           FontSize="12"/>
+                    <Border StrokeShape="RoundRectangle 8" 
+                            Stroke="Transparent" 
+                            BackgroundColor="#252525" 
+                            Padding="8,0">
+                        <Picker ItemsSource="{Binding ColorModeOptions}"
+                                ItemDisplayBinding="{Binding DisplayName}"
+                                SelectedItem="{Binding SelectedColorModeOption}"
+                                TextColor="{AppThemeBinding Light=Black, Dark=White}"
+                                Title="モードを選択"
+                                TitleColor="#666666"
+                                HorizontalOptions="Fill"/>
+                    </Border>
+                </VerticalStackLayout>
                 
                 <!-- Sliders -->
                 <VerticalStackLayout Spacing="5">
@@ -125,7 +135,7 @@
                        HorizontalTextAlignment="Center"
                        FontSize="14"/>
             </VerticalStackLayout>
-        </Grid>
+        </ScrollView>
 
         <!-- 接続中オーバーレイUI (タップで表示切り替え) -->
         <Grid IsVisible="{Binding IsConnected}" 
@@ -146,12 +156,42 @@
                         Padding="24,16" 
                         StrokeThickness="0"
                         VerticalOptions="Start">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <Label Text="{Binding StatusMessage}" 
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                        <!-- 横画面ボタン (モバイルのみ) -->
+                        <Button Grid.Column="0"
+                                Text="⤢"
+                                Command="{Binding ToggleLandscapeCommand}"
+                                BackgroundColor="{Binding IsLandscapeLocked, Converter={StaticResource BoolToColorConverter}}"
+                                TextColor="White"
+                                FontSize="20"
+                                WidthRequest="44"
+                                HeightRequest="44"
+                                CornerRadius="8"
+                                Padding="0"
+                                IsVisible="{Binding IsMobilePlatform}"/>
+                        
+                        <Label Grid.Column="1"
+                               Text="{Binding StatusMessage}" 
                                TextColor="White" 
                                FontSize="14"
-                               VerticalOptions="Center"/>
-                        <HorizontalStackLayout Grid.Column="1" Spacing="8">
+                               VerticalOptions="Center"
+                               HorizontalOptions="Center"/>
+
+                        <!-- PiPボタン (iOSのみ) -->
+                        <Button Grid.Column="2"
+                                Text="PiP"
+                                Command="{Binding TogglePiPCommand}"
+                                BackgroundColor="#333333"
+                                TextColor="White"
+                                FontSize="12"
+                                WidthRequest="44"
+                                HeightRequest="44"
+                                CornerRadius="8"
+                                Padding="0"
+                                Margin="0,0,8,0"
+                                IsVisible="{Binding IsMobilePlatform}"/>
+
+                        <HorizontalStackLayout Grid.Column="3" Spacing="8">
                             <BoxView Color="#32D74B" WidthRequest="8" HeightRequest="8" CornerRadius="4" VerticalOptions="Center"/>
                             <Label Text="Live" TextColor="#32D74B" FontSize="12" FontAttributes="Bold" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
@@ -161,20 +201,20 @@
                 <!-- フッター -->
                 <Border Grid.Row="2" 
                         BackgroundColor="#CC1C1C1E" 
-                        Padding="24,32" 
+                        Padding="16,20" 
                         StrokeThickness="0"
                         VerticalOptions="End">
-                    <VerticalStackLayout Spacing="24">
+                    <VerticalStackLayout Spacing="16">
                         <!-- オーディオコントロール -->
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16" WidthRequest="400" HorizontalOptions="Center">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" MaximumWidthRequest="320" HorizontalOptions="Center">
                             <Button Grid.Column="0"
                                     Text="{Binding IsMuted, Converter={StaticResource MuteIconConverter}}"
                                     Command="{Binding ToggleMuteCommand}"
                                     BackgroundColor="Transparent"
                                     TextColor="White"
-                                    FontSize="24"
-                                    WidthRequest="48"
-                                    HeightRequest="48"
+                                    FontSize="20"
+                                    WidthRequest="40"
+                                    HeightRequest="40"
                                     Padding="0"/>
                             
                             <Slider Grid.Column="1"
@@ -190,18 +230,19 @@
                                    Text="{Binding Volume, StringFormat='{0:P0}'}" 
                                    TextColor="#808080" 
                                    VerticalOptions="Center" 
-                                   FontSize="12" 
-                                   WidthRequest="40"/>
+                                   FontSize="11" 
+                                   WidthRequest="35"/>
                         </Grid>
 
                         <Button Text="Disconnect" 
                                 Command="{Binding DisconnectCommand}" 
                                 BackgroundColor="#FF453A" 
                                 TextColor="White" 
-                                CornerRadius="24"
-                                HeightRequest="48"
-                                WidthRequest="160"
+                                CornerRadius="20"
+                                HeightRequest="40"
+                                WidthRequest="120"
                                 HorizontalOptions="Center"
+                                FontSize="13"
                                 FontAttributes="Bold"/>
                     </VerticalStackLayout>
                 </Border>

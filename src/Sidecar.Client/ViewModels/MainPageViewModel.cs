@@ -89,6 +89,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     private readonly IStreamClient _streamClient;
     private readonly IAudioClient _audioClient;
     private readonly IAudioPlayerService _audioPlayer;
+    private readonly IOrientationService _orientationService;
     private CancellationTokenSource? _connectionTokenSource;
     private bool _disposed;
 
@@ -144,11 +145,44 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
         }
     }
 
-    public MainPageViewModel(IStreamClient streamClient, IAudioClient audioClient, IAudioPlayerService audioPlayer)
+    /// <summary>
+    /// 横画面ロック中かどうか
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsLandscapeLocked { get; set; }
+
+    /// <summary>
+    /// モバイルプラットフォームかどうか（iOS/Android）
+    /// </summary>
+    public bool IsMobilePlatform =>
+#if IOS || ANDROID
+        true;
+#else
+        false;
+#endif
+
+    /// <summary>
+    /// PiPが有効かどうか
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsPiPActive { get; set; }
+
+    /// <summary>
+    /// PiPをサポートしているか
+    /// </summary>
+    public bool IsPiPSupported =>
+#if IOS
+        true;
+#else
+        false;
+#endif
+
+    public MainPageViewModel(IStreamClient streamClient, IAudioClient audioClient, IAudioPlayerService audioPlayer, IOrientationService orientationService)
     {
         _streamClient = streamClient ?? throw new ArgumentNullException(nameof(streamClient));
         _audioClient = audioClient ?? throw new ArgumentNullException(nameof(audioClient));
         _audioPlayer = audioPlayer ?? throw new ArgumentNullException(nameof(audioPlayer));
+        _orientationService = orientationService ?? throw new ArgumentNullException(nameof(orientationService));
 
         _streamClient.FrameReceived += OnFrameReceived;
         _audioClient.AudioReceived += OnAudioReceived;
@@ -353,6 +387,17 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
         _audioClient.Disconnect();
         _audioPlayer.Stop();
 
+        // 縦画面に戻す
+        IsLandscapeLocked = false;
+        _orientationService.LockPortrait();
+        
+        // 少し遅らせてから自由回転を許可
+        Task.Run(async () =>
+        {
+            await Task.Delay(1000);
+            _orientationService.Unlock();
+        });
+
         IsConnected = false;
         StatusMessage = "切断済み";
     }
@@ -369,6 +414,31 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// 横画面ロックを切り替え
+    /// </summary>
+    [RelayCommand]
+    private void ToggleLandscape()
+    {
+        if (IsLandscapeLocked)
+        {
+            // 横画面から縦画面に戻す
+            IsLandscapeLocked = false;
+            _orientationService.LockPortrait();
+            
+            Task.Run(async () =>
+            {
+                await Task.Delay(1000);
+                _orientationService.Unlock();
+            });
+        }
+        else
+        {
+            IsLandscapeLocked = true;
+            _orientationService.LockLandscape();
+        }
+    }
+
+    /// <summary>
     /// 接続可能かどうかを取得
     /// </summary>
     private bool CanConnect() => !IsConnected && !IsConnecting;
@@ -377,6 +447,16 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// 切断可能かどうかを取得
     /// </summary>
     private bool CanDisconnect() => IsConnected;
+
+    /// <summary>
+    /// Picture-in-Picture の切り替え
+    /// </summary>
+    [RelayCommand]
+    private void TogglePiP()
+    {
+        if (!IsPiPSupported) return;
+        IsPiPActive = !IsPiPActive;
+    }
 
     /// <summary>
     /// 最新のフレームを取得
