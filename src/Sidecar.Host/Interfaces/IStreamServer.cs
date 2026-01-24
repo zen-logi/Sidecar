@@ -7,8 +7,7 @@ namespace Sidecar.Host.Interfaces;
 /// <summary>
 /// MJPEGストリームを配信するサーバーのインターフェース
 /// </summary>
-public interface IStreamServer : IDisposable
-{
+public interface IStreamServer : IDisposable {
     /// <summary>
     /// サーバーを開始
     /// </summary>

@@ -145,3 +145,6 @@ secrets.json
 # JetBrains Rider
 .idea/
 *.sln.iml
+
+# Agent workflows
+.agent/

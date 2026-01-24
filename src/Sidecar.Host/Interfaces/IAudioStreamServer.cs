@@ -7,8 +7,7 @@ namespace Sidecar.Host.Interfaces;
 /// <summary>
 /// 音声ストリームを配信するサーバーのインターフェース
 /// </summary>
-public interface IAudioStreamServer : IDisposable
-{
+public interface IAudioStreamServer : IDisposable {
     /// <summary>
     /// サーバーを開始
     /// </summary>

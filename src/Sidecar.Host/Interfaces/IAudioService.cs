@@ -9,8 +9,7 @@ namespace Sidecar.Host.Interfaces;
 /// <summary>
 /// 音声キャプチャサービスのインターフェース
 /// </summary>
-public interface IAudioService : IDisposable
-{
+public interface IAudioService : IDisposable {
     /// <summary>
     /// 利用可能な音声デバイスを列挙
     /// </summary>

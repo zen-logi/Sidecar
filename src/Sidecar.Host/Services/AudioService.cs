@@ -2,7 +2,6 @@
 // Copyright (c) Sidecar. All rights reserved.
 // </copyright>
 
-using System.IO;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -16,14 +15,17 @@ namespace Sidecar.Host.Services;
 /// <summary>
 /// NAudioを使用した音声キャプチャサービス
 /// </summary>
-public sealed class AudioService : IAudioService
-{
-    private readonly ILogger<AudioService> _logger;
+/// <remarks>
+/// <see cref="AudioService"/> クラスの新しいインスタンスを初期化
+/// </remarks>
+/// <param name="logger">ロガー</param>
+public sealed class AudioService(ILogger<AudioService> logger) : IAudioService {
     private IWaveIn? _waveIn;
+
     private WaveFormat? _targetFormat;
     private BufferedWaveProvider? _captureProvider;
     private IWaveProvider? _conversionStream;
-    private byte[] _conversionBuffer = new byte[4096]; // 低遅延化のためバッファサイズを縮小
+    private readonly byte[] _conversionBuffer = new byte[4096]; // 低遅延化のためバッファサイズを縮小
     private long _totalBytesCaptured;
     private long _totalBytesConverted;
     private bool _disposed;
@@ -38,25 +40,14 @@ public sealed class AudioService : IAudioService
     /// <inheritdoc/>
     public bool IsCapturing => _waveIn is not null;
 
-    /// <summary>
-    /// <see cref="AudioService"/> クラスの新しいインスタンスを初期化
-    /// </summary>
-    /// <param name="logger">ロガー</param>
-    public AudioService(ILogger<AudioService> logger)
-    {
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
-
     /// <inheritdoc/>
-    public IReadOnlyList<AudioDevice> GetAvailableDevices()
-    {
+    public IReadOnlyList<AudioDevice> GetAvailableDevices() {
         var devices = new List<AudioDevice>();
 
         using var enumerator = new MMDeviceEnumerator();
 
         // キャプチャボード / マイク (入力デバイス)
-        foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active))
-        {
+        foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active)) {
             // キャプチャボードは通常「USB」「HDMI」「Capture」などの名前を含む
             var type = IsLikelyCaptureBoard(device.FriendlyName)
                 ? AudioDeviceType.CaptureBoard
@@ -66,8 +57,7 @@ public sealed class AudioService : IAudioService
         }
 
         // システム音声 (WASAPI Loopback)
-        foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
-        {
+        foreach (var device in enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)) {
             devices.Add(new AudioDevice(
                 $"loopback:{device.ID}",
                 $"[システム音声] {device.FriendlyName}",
@@ -76,11 +66,11 @@ public sealed class AudioService : IAudioService
 
         // 優先度順にソート: キャプチャボード > システム音声 > マイク
         return devices
-            .OrderBy(d => d.Type switch
-            {
+            .OrderBy(d => d.Type switch {
                 AudioDeviceType.CaptureBoard => 0,
                 AudioDeviceType.SystemAudio => 1,
                 AudioDeviceType.Microphone => 2,
+                AudioDeviceType.Mixed => throw new NotImplementedException(),
                 _ => 3
             })
             .ToList()
@@ -88,10 +78,8 @@ public sealed class AudioService : IAudioService
     }
 
     /// <inheritdoc/>
-    public Task StartCaptureAsync(string deviceId, CancellationToken cancellationToken = default)
-    {
-        if (_waveIn is not null)
-        {
+    public Task StartCaptureAsync(string deviceId, CancellationToken cancellationToken = default) {
+        if (_waveIn is not null) {
             throw new InvalidOperationException("既にキャプチャ中");
         }
 
@@ -103,14 +91,12 @@ public sealed class AudioService : IAudioService
 
         using var enumerator = new MMDeviceEnumerator();
 
-        if (deviceId.StartsWith("loopback:"))
-        {
+        if (deviceId.StartsWith("loopback:")) {
             // WASAPI Loopback (システム音声)
             var actualId = deviceId["loopback:".Length..];
             var device = enumerator.GetDevice(actualId);
 
-            var capture = new WasapiLoopbackCapture(device)
-            {
+            var capture = new WasapiLoopbackCapture(device) {
                 ShareMode = AudioClientShareMode.Shared,
             };
 
@@ -118,15 +104,12 @@ public sealed class AudioService : IAudioService
             capture.RecordingStopped += OnRecordingStopped;
 
             _waveIn = capture;
-            _logger.LogInformation("WASAPI Loopback キャプチャを開始: {DeviceName}", device.FriendlyName);
-        }
-        else
-        {
+            logger.LogInformation("WASAPI Loopback キャプチャを開始: {DeviceName}", device.FriendlyName);
+        } else {
             // WASAPI Capture (マイク / キャプチャボード)
             var device = enumerator.GetDevice(deviceId);
 
-            var capture = new WasapiCapture(device)
-            {
+            var capture = new WasapiCapture(device) {
                 ShareMode = AudioClientShareMode.Shared,
             };
 
@@ -134,13 +117,12 @@ public sealed class AudioService : IAudioService
             capture.RecordingStopped += OnRecordingStopped;
 
             _waveIn = capture;
-            _logger.LogInformation("WASAPI キャプチャを開始: {DeviceName} (入力フォーマット: {InputFormat})", 
+            logger.LogInformation("WASAPI キャプチャを開始: {DeviceName} (入力フォーマット: {InputFormat})",
                 device.FriendlyName, _waveIn.WaveFormat);
         }
 
         // 変換用プロバイダーの設定
-        _captureProvider = new BufferedWaveProvider(_waveIn.WaveFormat)
-        {
+        _captureProvider = new BufferedWaveProvider(_waveIn.WaveFormat) {
             DiscardOnBufferOverflow = true,
             BufferDuration = TimeSpan.FromSeconds(1)
         };
@@ -149,9 +131,8 @@ public sealed class AudioService : IAudioService
         ISampleProvider sampleProvider = _captureProvider.ToSampleProvider();
 
         // リサンプリングが必要な場合 (例: 44.1kHz -> 48kHz)
-        if (sampleProvider.WaveFormat.SampleRate != _targetFormat.SampleRate)
-        {
-            _logger.LogInformation("リサンプリングを適用: {SourceRate}Hz -> {TargetRate}Hz", 
+        if (sampleProvider.WaveFormat.SampleRate != _targetFormat.SampleRate) {
+            logger.LogInformation("リサンプリングを適用: {SourceRate}Hz -> {TargetRate}Hz",
                 sampleProvider.WaveFormat.SampleRate, _targetFormat.SampleRate);
             sampleProvider = new WdlResamplingSampleProvider(sampleProvider, _targetFormat.SampleRate);
         }
@@ -169,49 +150,36 @@ public sealed class AudioService : IAudioService
     }
 
     /// <inheritdoc/>
-    public async Task StopCaptureAsync(CancellationToken cancellationToken = default)
-    {
-        if (_waveIn is not null)
-        {
-            await Task.Run(() =>
-            {
-                try
-                {
+    public async Task StopCaptureAsync(CancellationToken cancellationToken = default) {
+        if (_waveIn is not null) {
+            await Task.Run(() => {
+                try {
                     _waveIn.StopRecording();
 
-                    if (_waveIn is WasapiCapture wasapiCapture)
-                    {
+                    if (_waveIn is WasapiCapture wasapiCapture) {
                         wasapiCapture.DataAvailable -= OnDataAvailable;
                         wasapiCapture.RecordingStopped -= OnRecordingStopped;
-                    }
-                    else if (_waveIn is WasapiLoopbackCapture loopbackCapture)
-                    {
+                    } else if (_waveIn is WasapiLoopbackCapture loopbackCapture) {
                         loopbackCapture.DataAvailable -= OnDataAvailable;
                         loopbackCapture.RecordingStopped -= OnRecordingStopped;
                     }
 
                     _waveIn.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "NAudio停止中の例外");
+                } catch (Exception ex) {
+                    logger.LogDebug(ex, "NAudio停止中の例外");
                 }
             }, cancellationToken);
-            
+
             _waveIn = null;
         }
 
 #if DEBUG
-        if (_statsCts != null)
-        {
+        if (_statsCts != null) {
             await _statsCts.CancelAsync();
-            if (_statsTask != null)
-            {
-                try
-                {
+            if (_statsTask != null) {
+                try {
                     await _statsTask.WaitAsync(TimeSpan.FromSeconds(1), cancellationToken);
-                }
-                catch (OperationCanceledException) { }
+                } catch (OperationCanceledException) { }
             }
             _statsCts.Dispose();
             _statsCts = null;
@@ -219,40 +187,38 @@ public sealed class AudioService : IAudioService
         }
 #endif
 
-        await Task.Run(() =>
-        {
+        await Task.Run(() => {
             (_conversionStream as IDisposable)?.Dispose();
             _conversionStream = null;
             _captureProvider = null;
         }, cancellationToken);
 
-        _logger.LogInformation("音声キャプチャを停止");
+        logger.LogInformation("音声キャプチャを停止");
     }
 
-    private void OnDataAvailable(object? sender, WaveInEventArgs e)
-    {
-        if (e.BytesRecorded == 0) return;
+    private void OnDataAvailable(object? sender, WaveInEventArgs e) {
+        if (e.BytesRecorded == 0)
+            return;
 
-        try
-        {
-            Interlocked.Add(ref _totalBytesCaptured, e.BytesRecorded);
+        try {
+            _ = Interlocked.Add(ref _totalBytesCaptured, e.BytesRecorded);
 
             // 高速パス: 48kHz Float 入力の場合は直接変換 (処理負荷軽減と無限ループ回避)
             if (_waveIn?.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat &&
                 _waveIn.WaveFormat.SampleRate == StreamingConstants.AudioSampleRate &&
-                _waveIn.WaveFormat.Channels == StreamingConstants.AudioChannels)
-            {
+                _waveIn.WaveFormat.Channels == StreamingConstants.AudioChannels) {
                 var pcmData = new byte[e.BytesRecorded / 2];
-                for (int i = 0; i < e.BytesRecorded / 4; i++)
-                {
-                    float sample = BitConverter.ToSingle(e.Buffer, i * 4);
+                for (var i = 0; i < e.BytesRecorded / 4; i++) {
+                    var sample = BitConverter.ToSingle(e.Buffer, i * 4);
                     // 範囲制限
-                    if (sample > 1.0f) sample = 1.0f;
-                    else if (sample < -1.0f) sample = -1.0f;
-                    
-                    short s = (short)(sample * 32767);
+                    if (sample > 1.0f)
+                        sample = 1.0f;
+                    else if (sample < -1.0f)
+                        sample = -1.0f;
+
+                    var s = (short)(sample * 32767);
                     pcmData[i * 2] = (byte)(s & 0xff);
-                    pcmData[i * 2 + 1] = (byte)((s >> 8) & 0xff);
+                    pcmData[(i * 2) + 1] = (byte)((s >> 8) & 0xff);
                 }
 
                 var audioData = new AudioData(
@@ -262,22 +228,23 @@ public sealed class AudioService : IAudioService
                     DateTime.UtcNow.Ticks);
 
                 AudioAvailable?.Invoke(this, new AudioEventArgs(audioData));
-                Interlocked.Add(ref _totalBytesConverted, pcmData.Length);
+                _ = Interlocked.Add(ref _totalBytesConverted, pcmData.Length);
                 return;
             }
 
-            if (_captureProvider == null || _conversionStream == null) return;
+            if (_captureProvider == null || _conversionStream == null)
+                return;
 
             // キャプチャデータをバッファに追加
             _captureProvider.AddSamples(e.Buffer, 0, e.BytesRecorded);
 
             // ターゲットフォーマットへ変換して読み取り (安全のため読み取りループに上限を設定)
-            int totalRead = 0;
-            int iterations = 0;
-            while (iterations < 50) 
-            {
-                int read = _conversionStream.Read(_conversionBuffer, 0, _conversionBuffer.Length);
-                if (read <= 0) break;
+            var totalRead = 0;
+            var iterations = 0;
+            while (iterations < 50) {
+                var read = _conversionStream.Read(_conversionBuffer, 0, _conversionBuffer.Length);
+                if (read <= 0)
+                    break;
 
                 iterations++;
                 totalRead += read;
@@ -292,32 +259,26 @@ public sealed class AudioService : IAudioService
                     DateTime.UtcNow.Ticks);
 
                 AudioAvailable?.Invoke(this, new AudioEventArgs(audioData));
-                
+
                 // 1回のコールバックで1MBを超えるデータは異常として打ち切り
-                if (totalRead > 1024 * 1024) 
-                {
-                    _logger.LogWarning("音声変換データが上限を超えたため読み取りを中断");
+                if (totalRead > 1024 * 1024) {
+                    logger.LogWarning("音声変換データが上限を超えたため読み取りを中断");
                     break;
                 }
             }
-            Interlocked.Add(ref _totalBytesConverted, totalRead);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "音声フォーマット変換中にエラーが発生");
+            _ = Interlocked.Add(ref _totalBytesConverted, totalRead);
+        } catch (Exception ex) {
+            logger.LogError(ex, "音声フォーマット変換中にエラーが発生");
         }
     }
 
-    private void OnRecordingStopped(object? sender, StoppedEventArgs e)
-    {
-        if (e.Exception is not null)
-        {
-            _logger.LogError(e.Exception, "録音中にエラーが発生");
+    private void OnRecordingStopped(object? sender, StoppedEventArgs e) {
+        if (e.Exception is not null) {
+            logger.LogError(e.Exception, "録音中にエラーが発生");
         }
     }
 
-    private static bool IsLikelyCaptureBoard(string deviceName)
-    {
+    private static bool IsLikelyCaptureBoard(string deviceName) {
         var lowerName = deviceName.ToLowerInvariant();
         return lowerName.Contains("capture") ||
                lowerName.Contains("hdmi") ||
@@ -328,9 +289,9 @@ public sealed class AudioService : IAudioService
     }
 
     /// <inheritdoc/>
-    public void Dispose()
-    {
-        if (_disposed) return;
+    public void Dispose() {
+        if (_disposed)
+            return;
 
         _waveIn?.StopRecording();
         _waveIn?.Dispose();
@@ -342,23 +303,17 @@ public sealed class AudioService : IAudioService
         _disposed = true;
     }
 
-    private async Task LogStatsAsync(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
+    private async Task LogStatsAsync(CancellationToken cancellationToken) {
+        while (!cancellationToken.IsCancellationRequested) {
+            try {
                 await Task.Delay(1000, cancellationToken);
                 var captured = Interlocked.Exchange(ref _totalBytesCaptured, 0);
                 var converted = Interlocked.Exchange(ref _totalBytesConverted, 0);
-                if (captured > 0 || converted > 0)
-                {
-                    _logger.LogDebug("音声キャプチャ統計: キャプチャ {Captured} バイト, 変換後 {Converted} バイト", 
+                if (captured > 0 || converted > 0) {
+                    logger.LogDebug("音声キャプチャ統計: キャプチャ {Captured} バイト, 変換後 {Converted} バイト",
                         captured, converted);
                 }
-            }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex) { _logger.LogError(ex, "統計ログ出力エラー"); }
+            } catch (OperationCanceledException) { break; } catch (Exception ex) { logger.LogError(ex, "統計ログ出力エラー"); }
         }
     }
 }

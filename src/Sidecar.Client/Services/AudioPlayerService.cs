@@ -22,6 +22,8 @@ public sealed class AudioPlayerService : IAudioPlayerService
     private float _volume = 1.0f;
     private bool _isPlaying;
     private bool _disposed;
+    private int _sampleRate;
+    private int _channels;
 
 #if WINDOWS
     private IWavePlayer? _waveOut;
@@ -29,8 +31,6 @@ public sealed class AudioPlayerService : IAudioPlayerService
     private VolumeSampleProvider? _volumeProvider;
     private MMDeviceEnumerator? _deviceEnumerator;
     private DeviceNotificationClient? _notificationClient;
-    private int _sampleRate;
-    private int _channels;
 #endif
 
     /// <inheritdoc />

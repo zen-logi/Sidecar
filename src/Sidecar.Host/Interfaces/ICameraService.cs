@@ -9,8 +9,7 @@ namespace Sidecar.Host.Interfaces;
 /// <summary>
 /// キャプチャデバイスからフレームを取得するサービスのインターフェース
 /// </summary>
-public interface ICameraService : IDisposable
-{
+public interface ICameraService : IDisposable {
     /// <summary>
     /// 利用可能なカメラデバイスを列挙
     /// </summary>
