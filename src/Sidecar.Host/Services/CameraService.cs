@@ -105,6 +105,10 @@ public sealed class CameraService(ILogger<CameraService> logger, IBt709Converter
 
                 // OpenCVでJPEGにエンコード
                 using var mat = Mat.FromPixelData(height, width, MatType.CV_8UC3, bgrData);
+
+                // 上下反転（データが下から上の順で格納されているため）
+                Cv2.Flip(mat, mat, FlipMode.X);
+
                 _ = Cv2.ImEncode(".jpg", mat, out jpegData, [(int)ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality]);
             } else {
                 // 3. その他の形式はFlashCapのデフォルト変換を使用
