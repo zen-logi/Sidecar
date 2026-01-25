@@ -1,5 +1,6 @@
 using FlashCap;
 using Microsoft.Extensions.Logging;
+using OpenCvSharp;
 using Sidecar.Host.Interfaces;
 using Sidecar.Shared;
 using Sidecar.Shared.Models;
@@ -13,7 +14,8 @@ namespace Sidecar.Host.Services;
 /// <see cref="CameraService"/> クラスの新しいインスタンスを初期化
 /// </remarks>
 /// <param name="logger">ロガー</param>
-public sealed class CameraService(ILogger<CameraService> logger) : ICameraService, IDisposable {
+/// <param name="bt709Converter">BT.709色空間コンバーター</param>
+public sealed class CameraService(ILogger<CameraService> logger, IBt709Converter bt709Converter) : ICameraService, IDisposable {
     private CaptureDevice? _captureDevice;
     private VideoCharacteristics? _characteristics;
     private byte[]? _latestFrame;
@@ -54,10 +56,11 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
 
         var targetDescriptor = descriptorList[deviceIndex];
 
-        // 戦略: JPEG/MJPGを優先 (パススルー) > YUYV (変換) > その他
+        // 戦略: YUYV (変換) > JPEG/MJPG (パススルー) > その他
+        // 独自の高速BT.709コンバーターを使用するため、YUYVを最優先にする
         var characteristics = targetDescriptor.Characteristics
-            .OrderByDescending(c => c.PixelFormat == PixelFormats.JPEG)
-            .ThenByDescending(c => c.PixelFormat == PixelFormats.YUYV)
+            .OrderByDescending(c => c.PixelFormat == PixelFormats.YUYV)
+            .ThenByDescending(c => c.PixelFormat == PixelFormats.JPEG)
             .ThenByDescending(c => c.Width * c.Height) // 高解像度を優先
             .FirstOrDefault() ?? targetDescriptor.Characteristics.FirstOrDefault();
 
@@ -70,7 +73,8 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
 
         logger.LogInformation($"Selected Format: {characteristics.PixelFormat}, {characteristics.Width}x{characteristics.Height} @ {characteristics.FramesPerSecond}");
 
-        _captureDevice = await targetDescriptor.OpenAsync(characteristics, OnPixelBufferArrived, ct: cancellationToken);
+        // DoNotTranscode を指定して生のYUVデータを取得し、自前でBT.709変換を行う
+        _captureDevice = await targetDescriptor.OpenAsync(characteristics, TranscodeFormats.DoNotTranscode, OnPixelBufferArrived, ct: cancellationToken);
         await _captureDevice.StartAsync(cancellationToken);
 
         logger.LogInformation($"Started FlashCap on {targetDescriptor.Name}");
@@ -84,34 +88,45 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
         try {
             byte[] jpegData;
 
-
-
             // 1. MJPG/JPEGの場合、高速パス (そのままコピー)
             if (_characteristics?.PixelFormat == PixelFormats.JPEG) {
                 jpegData = scope.Buffer.CopyImage();
-            } else {
-                // 2. YUY2などの場合、変換を確認
-                // FlashCapのExtractImageは通常BMP/RGBに変換する
-                // ストリーム用にJPEGに圧縮する必要がある
-                // 注意: これはCPU負荷が高い
+            } else if (_characteristics?.PixelFormat == PixelFormats.YUYV) {
+                // 2. YUYV/YUY2の場合、BT.709で正確な変換を行う
+                var width = _characteristics.Width;
+                var height = _characteristics.Height;
 
-                // FlashCapのデフォルト変換が良くない場合は手動でYUY2を処理する可能性があるが
-                // まずは標準のトランスコードを試す
+                // 生のピクセルデータを取得 (DoNotTranscode時でもDIBヘッダーが含まれる可能性がある)
+                var rawData = scope.Buffer.ReferImage();
+                var rawSpan = rawData.AsSpan();
+
+                // DIBヘッダー (BITMAPINFOHEADER 40バイト) の検出
+                int headerOffset = 0;
+                if (rawSpan.Length > 40 && BitConverter.ToInt32(rawSpan[..4]) == 40) {
+                    headerOffset = 40;
+                }
+
+                // Strideを計算（ヘッダーを除いたピクセルデータ部分を高さで割る）
+                var pixelDataSpan = rawSpan.Slice(headerOffset);
+                var stride = height > 0 ? (pixelDataSpan.Length / height) : width * 2;
+
+                // BT.709変換（TVレンジからフルレンジへ拡張）
+                var bgrData = bt709Converter.ConvertYuy2ToBgr(pixelDataSpan, width, height, stride, expandTvRange: true);
+
+                // OpenCVでJPEGにエンコード
+                using var mat = Mat.FromPixelData(height, width, MatType.CV_8UC3, bgrData);
+
+                // メモ: 生のYUVは通常Top-DownなのでFlipは不要なはず。
+                _ = Cv2.ImEncode(".jpg", mat, out jpegData, [(int)ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality]);
+            } else {
+                // 3. その他の形式はFlashCapのデフォルト変換を使用
                 var imageData = scope.Buffer.ExtractImage();
 
-                // imageDataはおそらくBMP形式 (ヘッダー + データ)
-                // BMPをJPEGに変換する必要がある
-
-                // 参照により OpenCvSharp があるため、柔軟なエンコードに使用可能
-                // scope.Buffer.ExtractImage() は完全なBMPファイル配列を返す
-
-                // 現状は基本的な抽出に依存する
-                // BMPであれば、OpenCVを使用してバッファをデコードし、JPEGにエンコードできる
-                using var mat = OpenCvSharp.Cv2.ImDecode(imageData, OpenCvSharp.ImreadModes.Color);
+                using var mat = Cv2.ImDecode(imageData, ImreadModes.Color);
                 if (mat.Empty())
                     return; // デコード失敗
 
-                _ = OpenCvSharp.Cv2.ImEncode(".jpg", mat, out jpegData, [(int)OpenCvSharp.ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality]);
+                _ = Cv2.ImEncode(".jpg", mat, out jpegData, [(int)ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality]);
             }
 
             var frameNumber = Interlocked.Increment(ref _frameNumber);
