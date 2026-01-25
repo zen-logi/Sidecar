@@ -97,11 +97,20 @@ public sealed class CameraService(ILogger<CameraService> logger, IBt709Converter
                 // 生のピクセルデータを取得
                 var rawData = scope.Buffer.ReferImage();
 
-                // Strideを計算（バッファサイズ / 高さ = 1行あたりのバイト数）
-                var stride = rawData.Count / height;
+                // ヘッダー（BITMAPINFOHEADER 40バイト等）がバッファ先頭に含まれる場合がある
+                // 全体サイズから期待されるピクセルサイズを引いてオフセットを算出
+                var expectedPixelSize = width * height * 2;
+                var headerOffset = rawData.Count - expectedPixelSize;
+
+                // 負の値や異常な値をガード
+                if (headerOffset < 0 || headerOffset > 4096) headerOffset = 0;
+
+                // Strideを計算（ピクセルデータ部分を高さで割る）
+                var stride = (rawData.Count - headerOffset) / height;
 
                 // BT.709変換（TVレンジからフルレンジへ拡張）
-                var bgrData = bt709Converter.ConvertYuy2ToBgr(rawData.AsSpan(), width, height, stride, expandTvRange: true);
+                // ヘッダー分をスキップしてスライスを渡す
+                var bgrData = bt709Converter.ConvertYuy2ToBgr(rawData.AsSpan().Slice(headerOffset), width, height, stride, expandTvRange: true);
 
                 // OpenCVでJPEGにエンコード
                 using var mat = Mat.FromPixelData(height, width, MatType.CV_8UC3, bgrData);

@@ -69,11 +69,11 @@ public sealed class Bt709Converter : IBt709Converter {
             for (var x = 0; x < width * 2; x += 4) {
                 var idx = yuy2RowStart + x;
 
-                // UYVY: [U, Y0, V, Y1] で２ピクセル分
-                var u = yuy2Data[idx];
-                var y0Raw = yuy2Data[idx + 1];
-                var v = yuy2Data[idx + 2];
-                var y1Raw = yuy2Data[idx + 3];
+                // YUYV (YUY2): [Y0, U, Y1, V] で２ピクセル分
+                var y0Raw = yuy2Data[idx];
+                var u = yuy2Data[idx + 1];
+                var y1Raw = yuy2Data[idx + 2];
+                var v = yuy2Data[idx + 3];
 
                 // TVレンジからフルレンジに拡張
                 var y0 = ExpandYTvRange(y0Raw);
@@ -111,11 +111,11 @@ public sealed class Bt709Converter : IBt709Converter {
             for (var x = 0; x < width * 2; x += 4) {
                 var idx = yuy2RowStart + x;
 
-                // UYVY: [U, Y0, V, Y1] で２ピクセル分
-                var u = yuy2Data[idx];
-                var y0 = yuy2Data[idx + 1];
-                var v = yuy2Data[idx + 2];
-                var y1 = yuy2Data[idx + 3];
+                // YUYV (YUY2): [Y0, U, Y1, V] で２ピクセル分
+                var y0 = yuy2Data[idx];
+                var u = yuy2Data[idx + 1];
+                var y1 = yuy2Data[idx + 2];
+                var v = yuy2Data[idx + 3];
 
                 var uVal = u - 128;
                 var vVal = v - 128;
