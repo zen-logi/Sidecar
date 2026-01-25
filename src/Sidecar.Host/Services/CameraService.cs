@@ -56,10 +56,11 @@ public sealed class CameraService(ILogger<CameraService> logger, IBt709Converter
 
         var targetDescriptor = descriptorList[deviceIndex];
 
-        // 戦略: JPEG/MJPGを優先 (パススルー) > YUYV (変換) > その他
+        // 戦略: YUYV (変換) > JPEG/MJPG (パススルー) > その他
+        // 独自の高速BT.709コンバーターを使用するため、YUYVを最優先にする
         var characteristics = targetDescriptor.Characteristics
-            .OrderByDescending(c => c.PixelFormat == PixelFormats.JPEG)
-            .ThenByDescending(c => c.PixelFormat == PixelFormats.YUYV)
+            .OrderByDescending(c => c.PixelFormat == PixelFormats.YUYV)
+            .ThenByDescending(c => c.PixelFormat == PixelFormats.JPEG)
             .ThenByDescending(c => c.Width * c.Height) // 高解像度を優先
             .FirstOrDefault() ?? targetDescriptor.Characteristics.FirstOrDefault();
 
@@ -72,7 +73,8 @@ public sealed class CameraService(ILogger<CameraService> logger, IBt709Converter
 
         logger.LogInformation($"Selected Format: {characteristics.PixelFormat}, {characteristics.Width}x{characteristics.Height} @ {characteristics.FramesPerSecond}");
 
-        _captureDevice = await targetDescriptor.OpenAsync(characteristics, OnPixelBufferArrived, ct: cancellationToken);
+        // DoNotTranscode を指定して生のYUVデータを取得し、自前でBT.709変換を行う
+        _captureDevice = await targetDescriptor.OpenAsync(characteristics, TranscodeFormats.DoNotTranscode, OnPixelBufferArrived, ct: cancellationToken);
         await _captureDevice.StartAsync(cancellationToken);
 
         logger.LogInformation($"Started FlashCap on {targetDescriptor.Name}");
@@ -94,30 +96,27 @@ public sealed class CameraService(ILogger<CameraService> logger, IBt709Converter
                 var width = _characteristics.Width;
                 var height = _characteristics.Height;
 
-                // 生のピクセルデータを取得
+                // 生のピクセルデータを取得 (DoNotTranscode時でもDIBヘッダーが含まれる可能性がある)
                 var rawData = scope.Buffer.ReferImage();
+                var rawSpan = rawData.AsSpan();
 
-                // ヘッダー（BITMAPINFOHEADER 40バイト等）がバッファ先頭に含まれる場合がある
-                // 全体サイズから期待されるピクセルサイズを引いてオフセットを算出
-                var expectedPixelSize = width * height * 2;
-                var headerOffset = rawData.Count - expectedPixelSize;
+                // DIBヘッダー (BITMAPINFOHEADER 40バイト) の検出
+                int headerOffset = 0;
+                if (rawSpan.Length > 40 && BitConverter.ToInt32(rawSpan[..4]) == 40) {
+                    headerOffset = 40;
+                }
 
-                // 負の値や異常な値をガード
-                if (headerOffset < 0 || headerOffset > 4096) headerOffset = 0;
-
-                // Strideを計算（ピクセルデータ部分を高さで割る）
-                var stride = (rawData.Count - headerOffset) / height;
+                // Strideを計算（ヘッダーを除いたピクセルデータ部分を高さで割る）
+                var pixelDataSpan = rawSpan.Slice(headerOffset);
+                var stride = height > 0 ? (pixelDataSpan.Length / height) : width * 2;
 
                 // BT.709変換（TVレンジからフルレンジへ拡張）
-                // ヘッダー分をスキップしてスライスを渡す
-                var bgrData = bt709Converter.ConvertYuy2ToBgr(rawData.AsSpan().Slice(headerOffset), width, height, stride, expandTvRange: true);
+                var bgrData = bt709Converter.ConvertYuy2ToBgr(pixelDataSpan, width, height, stride, expandTvRange: true);
 
                 // OpenCVでJPEGにエンコード
                 using var mat = Mat.FromPixelData(height, width, MatType.CV_8UC3, bgrData);
 
-                // 上下反転（データが下から上の順で格納されているため）
-                Cv2.Flip(mat, mat, FlipMode.X);
-
+                // メモ: 生のYUVは通常Top-DownなのでFlipは不要なはず。
                 _ = Cv2.ImEncode(".jpg", mat, out jpegData, [(int)ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality]);
             } else {
                 // 3. その他の形式はFlashCapのデフォルト変換を使用
