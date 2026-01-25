@@ -14,7 +14,8 @@ public interface IBt709Converter {
     /// <param name="yuy2Data">YUY2形式の入力データ</param>
     /// <param name="width">画像の幅（ピクセル）</param>
     /// <param name="height">画像の高さ（ピクセル）</param>
+    /// <param name="stride">1行あたりのバイト数（パディング含む）</param>
     /// <param name="expandTvRange">TVレンジ(16-235)からフルレンジ(0-255)に拡張するかどうか</param>
     /// <returns>BGR形式のピクセルデータ</returns>
-    byte[] ConvertYuy2ToBgr(ReadOnlySpan<byte> yuy2Data, int width, int height, bool expandTvRange = true);
+    byte[] ConvertYuy2ToBgr(ReadOnlySpan<byte> yuy2Data, int width, int height, int stride, bool expandTvRange = true);
 }

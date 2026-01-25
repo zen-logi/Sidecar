@@ -32,20 +32,19 @@ public sealed class Bt709Converter : IBt709Converter {
     private const int TvRangeUvScale = 291;
 
     /// <inheritdoc/>
-    public byte[] ConvertYuy2ToBgr(ReadOnlySpan<byte> yuy2Data, int width, int height, bool expandTvRange = true) {
-        // YUY2は2ピクセルで4バイト（Y0, U, Y1, V）
-        var expectedSize = width * height * 2;
-        if (yuy2Data.Length < expectedSize) {
-            throw new ArgumentException($"YUY2データサイズが不正: 期待={expectedSize}, 実際={yuy2Data.Length}", nameof(yuy2Data));
+    public byte[] ConvertYuy2ToBgr(ReadOnlySpan<byte> yuy2Data, int width, int height, int stride, bool expandTvRange = true) {
+        // Strideベースでバッファサイズチェック
+        if (yuy2Data.Length < stride * height) {
+            throw new ArgumentException($"YUY2データサイズが不正: 期待={stride * height}, 実際={yuy2Data.Length}", nameof(yuy2Data));
         }
 
         // BGR出力（OpenCVはBGR順序を使用）
         var bgrData = new byte[width * height * 3];
 
         if (expandTvRange) {
-            ConvertWithTvRangeExpansion(yuy2Data, bgrData, width, height);
+            ConvertWithTvRangeExpansion(yuy2Data, bgrData, width, height, stride);
         } else {
-            ConvertFullRange(yuy2Data, bgrData, width, height);
+            ConvertFullRange(yuy2Data, bgrData, width, height, stride);
         }
 
         return bgrData;
@@ -58,18 +57,23 @@ public sealed class Bt709Converter : IBt709Converter {
     /// <param name="bgrData">BGR形式の出力バッファ</param>
     /// <param name="width">画像の幅</param>
     /// <param name="height">画像の高さ</param>
-    private static void ConvertWithTvRangeExpansion(ReadOnlySpan<byte> yuy2Data, Span<byte> bgrData, int width, int height) {
-        var yuy2Index = 0;
+    /// <param name="stride">1行あたりのバイト数（パディング含む）</param>
+    private static void ConvertWithTvRangeExpansion(ReadOnlySpan<byte> yuy2Data, Span<byte> bgrData, int width, int height, int stride) {
         var bgrIndex = 0;
 
         for (var y = 0; y < height; y++) {
-            for (var x = 0; x < width; x += 2) {
+            // 行の先頭位置を計算（パディング対応）
+            var yuy2RowStart = y * stride;
+
+            // 行内でのループ（パディング部分は読まないように width * 2 で止める）
+            for (var x = 0; x < width * 2; x += 4) {
+                var idx = yuy2RowStart + x;
+
                 // YUY2: [Y0, U, Y1, V] で2ピクセル分
-                var y0Raw = yuy2Data[yuy2Index];
-                var u = yuy2Data[yuy2Index + 1];
-                var y1Raw = yuy2Data[yuy2Index + 2];
-                var v = yuy2Data[yuy2Index + 3];
-                yuy2Index += 4;
+                var y0Raw = yuy2Data[idx];
+                var u = yuy2Data[idx + 1];
+                var y1Raw = yuy2Data[idx + 2];
+                var v = yuy2Data[idx + 3];
 
                 // TVレンジからフルレンジに拡張
                 var y0 = ExpandYTvRange(y0Raw);
@@ -95,17 +99,22 @@ public sealed class Bt709Converter : IBt709Converter {
     /// <param name="bgrData">BGR形式の出力バッファ</param>
     /// <param name="width">画像の幅</param>
     /// <param name="height">画像の高さ</param>
-    private static void ConvertFullRange(ReadOnlySpan<byte> yuy2Data, Span<byte> bgrData, int width, int height) {
-        var yuy2Index = 0;
+    /// <param name="stride">1行あたりのバイト数（パディング含む）</param>
+    private static void ConvertFullRange(ReadOnlySpan<byte> yuy2Data, Span<byte> bgrData, int width, int height, int stride) {
         var bgrIndex = 0;
 
         for (var y = 0; y < height; y++) {
-            for (var x = 0; x < width; x += 2) {
-                var y0 = yuy2Data[yuy2Index];
-                var u = yuy2Data[yuy2Index + 1];
-                var y1 = yuy2Data[yuy2Index + 2];
-                var v = yuy2Data[yuy2Index + 3];
-                yuy2Index += 4;
+            // 行の先頭位置を計算（パディング対応）
+            var yuy2RowStart = y * stride;
+
+            // 行内でのループ（パディング部分は読まないように width * 2 で止める）
+            for (var x = 0; x < width * 2; x += 4) {
+                var idx = yuy2RowStart + x;
+
+                var y0 = yuy2Data[idx];
+                var u = yuy2Data[idx + 1];
+                var y1 = yuy2Data[idx + 2];
+                var v = yuy2Data[idx + 3];
 
                 var uVal = u - 128;
                 var vVal = v - 128;

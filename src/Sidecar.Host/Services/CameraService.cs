@@ -97,8 +97,11 @@ public sealed class CameraService(ILogger<CameraService> logger, IBt709Converter
                 // 生のピクセルデータを取得
                 var rawData = scope.Buffer.ReferImage();
 
+                // Strideを計算（バッファサイズ / 高さ = 1行あたりのバイト数）
+                var stride = rawData.Count / height;
+
                 // BT.709変換（TVレンジからフルレンジへ拡張）
-                var bgrData = bt709Converter.ConvertYuy2ToBgr(rawData.AsSpan(), width, height, expandTvRange: true);
+                var bgrData = bt709Converter.ConvertYuy2ToBgr(rawData.AsSpan(), width, height, stride, expandTvRange: true);
 
                 // OpenCVでJPEGにエンコード
                 using var mat = Mat.FromPixelData(height, width, MatType.CV_8UC3, bgrData);
