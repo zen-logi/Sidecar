@@ -1,5 +1,6 @@
 using FlashCap;
 using Microsoft.Extensions.Logging;
+using OpenCvSharp;
 using Sidecar.Host.Interfaces;
 using Sidecar.Shared;
 using Sidecar.Shared.Models;
@@ -13,7 +14,8 @@ namespace Sidecar.Host.Services;
 /// <see cref="CameraService"/> クラスの新しいインスタンスを初期化
 /// </remarks>
 /// <param name="logger">ロガー</param>
-public sealed class CameraService(ILogger<CameraService> logger) : ICameraService, IDisposable {
+/// <param name="bt709Converter">BT.709色空間コンバーター</param>
+public sealed class CameraService(ILogger<CameraService> logger, IBt709Converter bt709Converter) : ICameraService, IDisposable {
     private CaptureDevice? _captureDevice;
     private VideoCharacteristics? _characteristics;
     private byte[]? _latestFrame;
@@ -84,34 +86,32 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
         try {
             byte[] jpegData;
 
-
-
             // 1. MJPG/JPEGの場合、高速パス (そのままコピー)
             if (_characteristics?.PixelFormat == PixelFormats.JPEG) {
                 jpegData = scope.Buffer.CopyImage();
-            } else {
-                // 2. YUY2などの場合、変換を確認
-                // FlashCapのExtractImageは通常BMP/RGBに変換する
-                // ストリーム用にJPEGに圧縮する必要がある
-                // 注意: これはCPU負荷が高い
+            } else if (_characteristics?.PixelFormat == PixelFormats.YUYV) {
+                // 2. YUYV/YUY2の場合、BT.709で正確な変換を行う
+                var width = _characteristics.Width;
+                var height = _characteristics.Height;
 
-                // FlashCapのデフォルト変換が良くない場合は手動でYUY2を処理する可能性があるが
-                // まずは標準のトランスコードを試す
+                // 生のピクセルデータを取得
+                var rawData = scope.Buffer.ReferImage();
+
+                // BT.709変換（TVレンジからフルレンジへ拡張）
+                var bgrData = bt709Converter.ConvertYuy2ToBgr(rawData.AsSpan(), width, height, expandTvRange: true);
+
+                // OpenCVでJPEGにエンコード
+                using var mat = Mat.FromPixelData(height, width, MatType.CV_8UC3, bgrData);
+                _ = Cv2.ImEncode(".jpg", mat, out jpegData, [(int)ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality]);
+            } else {
+                // 3. その他の形式はFlashCapのデフォルト変換を使用
                 var imageData = scope.Buffer.ExtractImage();
 
-                // imageDataはおそらくBMP形式 (ヘッダー + データ)
-                // BMPをJPEGに変換する必要がある
-
-                // 参照により OpenCvSharp があるため、柔軟なエンコードに使用可能
-                // scope.Buffer.ExtractImage() は完全なBMPファイル配列を返す
-
-                // 現状は基本的な抽出に依存する
-                // BMPであれば、OpenCVを使用してバッファをデコードし、JPEGにエンコードできる
-                using var mat = OpenCvSharp.Cv2.ImDecode(imageData, OpenCvSharp.ImreadModes.Color);
+                using var mat = Cv2.ImDecode(imageData, ImreadModes.Color);
                 if (mat.Empty())
                     return; // デコード失敗
 
-                _ = OpenCvSharp.Cv2.ImEncode(".jpg", mat, out jpegData, [(int)OpenCvSharp.ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality]);
+                _ = Cv2.ImEncode(".jpg", mat, out jpegData, [(int)ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality]);
             }
 
             var frameNumber = Interlocked.Increment(ref _frameNumber);

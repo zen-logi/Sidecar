@@ -3,6 +3,7 @@
 // </copyright>
 
 using Microsoft.Extensions.DependencyInjection;
+using Sidecar.Host.Converters;
 using Sidecar.Host.Interfaces;
 using Sidecar.Host.Services;
 
@@ -19,6 +20,7 @@ public static class HostServiceExtensions {
     /// <returns>サービスコレクション</returns>
     public static IServiceCollection AddSidecarHostServices(this IServiceCollection services) {
         // Video services
+        _ = services.AddSingleton<IBt709Converter, Bt709Converter>();
         _ = services.AddSingleton<ICameraService, CameraService>();
         _ = services.AddSingleton<IStreamServer, StreamServer>();
 
