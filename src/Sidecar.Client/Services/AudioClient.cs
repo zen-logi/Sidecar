@@ -13,16 +13,15 @@ namespace Sidecar.Client.Services;
 /// <summary>
 /// 音声ストリーミングクライアントの実装
 /// </summary>
-public sealed class AudioClient(ILogger<AudioClient> logger) : IAudioClient
-{
+public sealed class AudioClient(ILogger<AudioClient> logger) : IAudioClient {
     private TcpClient? _client;
     private NetworkStream? _stream;
-    private CancellationTokenSource? _cts; // Renamed from _receiveTokenSource
+    private CancellationTokenSource? _cts;
     private Task? _receiveTask;
-    private long _totalBytesReceived; // Added
-    private long _totalPacketsReceived; // Added
+    private long _totalBytesReceived;
+    private long _totalPacketsReceived;
 #if DEBUG
-    private Task? _statsTask; // Added
+    private Task? _statsTask;
 #endif
     private ConnectionState _state = ConnectionState.Disconnected;
     private bool _disposed;
@@ -31,30 +30,23 @@ public sealed class AudioClient(ILogger<AudioClient> logger) : IAudioClient
     public event EventHandler<AudioEventArgs>? AudioReceived;
 
     /// <inheritdoc />
-    public ConnectionState State
-    {
+    public ConnectionState State {
         get => _state;
         private set => _state = value;
     }
 
     /// <inheritdoc />
-    public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken = default)
-    {
+    public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken = default) {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (State == ConnectionState.Connected || State == ConnectionState.Connecting)
-        {
+        if (State == ConnectionState.Connected || State == ConnectionState.Connecting) {
             throw new InvalidOperationException("既に接続中");
         }
 
         State = ConnectionState.Connecting;
 
-        try
-        {
-            _client = new TcpClient
-            {
-                NoDelay = true,
-            };
+        try {
+            _client = new TcpClient { NoDelay = true, };
 
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             connectCts.CancelAfter(StreamingConstants.ConnectionTimeoutMs);
@@ -64,21 +56,17 @@ public sealed class AudioClient(ILogger<AudioClient> logger) : IAudioClient
             _stream = _client.GetStream();
             State = ConnectionState.Connected;
 
-            _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); // Renamed
-            _receiveTask = Task.Run(() => ReceiveLoop(_cts.Token), _cts.Token); // Renamed
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _receiveTask = Task.Run(() => ReceiveLoop(_cts.Token), _cts.Token);
 #if DEBUG
-            _statsTask = Task.Run(() => LogStatsAsync(_cts.Token), _cts.Token); // Added
+            _statsTask = Task.Run(() => LogStatsAsync(_cts.Token), _cts.Token);
 #endif
-            logger.LogInformation("音声サーバーに接続: {Host}:{Port}", host, port); // Added
-        }
-        catch (OperationCanceledException)
-        {
+            logger.LogInformation("音声サーバーに接続: {Host}:{Port}", host, port);
+        } catch (OperationCanceledException) {
             State = ConnectionState.Disconnected;
             throw;
-        }
-        catch (Exception ex) // Added ex
-        {
-            logger.LogError(ex, "音声サーバーへの接続に失敗: {Host}:{Port}", host, port); // Added
+        } catch (Exception ex) {
+            logger.LogError(ex, "音声サーバーへの接続に失敗: {Host}:{Port}", host, port);
             State = ConnectionState.Error;
             throw;
         }
@@ -86,10 +74,10 @@ public sealed class AudioClient(ILogger<AudioClient> logger) : IAudioClient
 
     /// <inheritdoc />
     public void Disconnect() {
-        _cts?.Cancel(); // Renamed
+        _cts?.Cancel();
         _receiveTask?.Wait(TimeSpan.FromSeconds(2));
 #if DEBUG
-        _statsTask?.Wait(TimeSpan.FromSeconds(2)); // Added
+        _statsTask?.Wait(TimeSpan.FromSeconds(2));
 #endif
 
         _stream?.Dispose();
@@ -98,25 +86,22 @@ public sealed class AudioClient(ILogger<AudioClient> logger) : IAudioClient
         _client?.Dispose();
         _client = null;
 
-        _cts?.Dispose(); // Renamed
+        _cts?.Dispose();
         _cts = null;
         _receiveTask = null;
 #if DEBUG
-        _statsTask = null; // Added
+        _statsTask = null;
 #endif
 
         State = ConnectionState.Disconnected;
-        logger.LogInformation("音声サーバーから切断"); // Added
+        logger.LogInformation("音声サーバーから切断");
     }
 
-    private async Task ReceiveLoop(CancellationToken cancellationToken)
-    {
+    private async Task ReceiveLoop(CancellationToken cancellationToken) {
         var headerBuffer = new byte[12]; // 4byte length + 8byte timestamp
 
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested && _stream is not null)
-            {
+        try {
+            while (!cancellationToken.IsCancellationRequested && _stream is not null) {
                 // ヘッダーを読み込む
                 if (!await ReadExactAsync(_stream, headerBuffer, cancellationToken)) // Kept ReadExactAsync for header
                 {
@@ -128,7 +113,7 @@ public sealed class AudioClient(ILogger<AudioClient> logger) : IAudioClient
 
                 if (dataLength <= 0 || dataLength > 1024 * 1024) // 1MB制限（異常データ防止）
                 {
-                    logger.LogWarning("無効なデータ長を受信: {DataLength}", dataLength); // Added
+                    logger.LogWarning("無効なデータ長を受信: {DataLength}", dataLength);
                     continue;
                 }
 
@@ -140,8 +125,8 @@ public sealed class AudioClient(ILogger<AudioClient> logger) : IAudioClient
                 // }
                 await _stream.ReadExactlyAsync(pcmData, cancellationToken); // Changed to ReadExactlyAsync
 
-                Interlocked.Add(ref _totalBytesReceived, dataLength); // Added
-                Interlocked.Increment(ref _totalPacketsReceived); // Added
+                Interlocked.Add(ref _totalBytesReceived, dataLength);
+                Interlocked.Increment(ref _totalPacketsReceived);
 
                 var audioData = new AudioData(
                     pcmData,
@@ -151,55 +136,42 @@ public sealed class AudioClient(ILogger<AudioClient> logger) : IAudioClient
 
                 AudioReceived?.Invoke(this, new AudioEventArgs(audioData));
             }
-        }
-        catch (OperationCanceledException)
-        {
+        } catch (OperationCanceledException) {
             // 正常終了
-        }
-        catch (Exception)
-        {
+        } catch (Exception) {
             State = ConnectionState.Error;
-        }
-        finally
-        {
+        } finally {
             State = ConnectionState.Disconnected;
         }
     }
 
-    private static async Task<bool> ReadExactAsync(NetworkStream stream, byte[] buffer, CancellationToken cancellationToken)
-    {
+    private static async Task<bool> ReadExactAsync(NetworkStream stream, byte[] buffer,
+        CancellationToken cancellationToken) {
         var totalRead = 0;
-        while (totalRead < buffer.Length)
-        {
+        while (totalRead < buffer.Length) {
             var read = await stream.ReadAsync(buffer.AsMemory(totalRead, buffer.Length - totalRead), cancellationToken);
             if (read == 0) return false;
             totalRead += read;
         }
+
         return true;
     }
 
-    private async Task LogStatsAsync(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
+    private async Task LogStatsAsync(CancellationToken cancellationToken) {
+        while (!cancellationToken.IsCancellationRequested) {
+            try {
                 await Task.Delay(1000, cancellationToken);
                 var bytes = Interlocked.Exchange(ref _totalBytesReceived, 0);
                 var packets = Interlocked.Exchange(ref _totalPacketsReceived, 0);
-                if (packets > 0)
-                {
+                if (packets > 0) {
                     logger.LogDebug("音声受信統計: {Packets} パケット, {Bytes} バイト", packets, bytes);
                 }
-            }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex) { logger.LogError(ex, "統計ログ出力エラー"); }
+            } catch (OperationCanceledException) { break; } catch (Exception ex) { logger.LogError(ex, "統計ログ出力エラー"); }
         }
     }
 
     /// <inheritdoc />
-    public void Dispose()
-    {
+    public void Dispose() {
         if (_disposed) return;
         Disconnect();
         _disposed = true;

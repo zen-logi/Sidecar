@@ -14,8 +14,7 @@ namespace Sidecar.Client.ViewModels;
 /// <summary>
 /// 色補正モード
 /// </summary>
-public enum ColorMode
-{
+public enum ColorMode {
     /// <summary>
     /// デフォルト（補正なし）
     /// </summary>
@@ -84,8 +83,7 @@ public enum ColorMode
 /// <summary>
 /// MainPageのViewModel
 /// </summary>
-public partial class MainPageViewModel : ObservableObject, IDisposable
-{
+public partial class MainPageViewModel : ObservableObject, IDisposable {
     private readonly IStreamClient _streamClient;
     private readonly IAudioClient _audioClient;
     private readonly IAudioPlayerService _audioPlayer;
@@ -102,8 +100,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// <summary>
     /// 色補正モードの選択肢
     /// </summary>
-    public class ColorModeOption
-    {
+    public class ColorModeOption {
         public string DisplayName { get; set; } = string.Empty;
         public ColorMode Mode { get; set; }
     }
@@ -111,8 +108,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// <summary>
     /// 利用可能な色補正モードのリスト
     /// </summary>
-    public IReadOnlyList<ColorModeOption> ColorModeOptions { get; } = new List<ColorModeOption>
-    {
+    public IReadOnlyList<ColorModeOption> ColorModeOptions { get; } = new List<ColorModeOption> {
         new() { DisplayName = "Default", Mode = ColorMode.Default },
         new() { DisplayName = "Rescue Purple (YUV Fix)", Mode = ColorMode.RescuePurple },
         new() { DisplayName = "HDR to SDR (Tone Map)", Mode = ColorMode.HDRToSDR },
@@ -136,29 +132,27 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     public partial ColorModeOption SelectedColorModeOption { get; set; }
 
-    partial void OnSelectedColorModeOptionChanged(ColorModeOption value)
-    {
-        if (value != null)
-        {
+    partial void OnSelectedColorModeOptionChanged(ColorModeOption value) {
+        if (value != null) {
             Preferences.Default.Set(PrefColorMode, (int)value.Mode);
         }
     }
 
-    public MainPageViewModel(IStreamClient streamClient, IAudioClient audioClient, IAudioPlayerService audioPlayer)
-    {
+    /// <inheritdoc />
+    public MainPageViewModel(IStreamClient streamClient, IAudioClient audioClient, IAudioPlayerService audioPlayer) {
         _streamClient = streamClient ?? throw new ArgumentNullException(nameof(streamClient));
         _audioClient = audioClient ?? throw new ArgumentNullException(nameof(audioClient));
         _audioPlayer = audioPlayer ?? throw new ArgumentNullException(nameof(audioPlayer));
 
         _streamClient.FrameReceived += OnFrameReceived;
         _audioClient.AudioReceived += OnAudioReceived;
-        
+
         // Load saved settings
         HostAddress = Preferences.Default.Get(PrefHostAddress, string.Empty);
         Saturation = Preferences.Default.Get(PrefSaturation, 1.0f);
         Contrast = Preferences.Default.Get(PrefContrast, 1.0f);
         Brightness = Preferences.Default.Get(PrefBrightness, 0.0f);
-        
+
         var savedMode = (ColorMode)Preferences.Default.Get(PrefColorMode, (int)ColorMode.Default);
         SelectedColorModeOption = ColorModeOptions.FirstOrDefault(o => o.Mode == savedMode) ?? ColorModeOptions[0];
     }
@@ -167,12 +161,9 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// 接続先ホストアドレス
     /// </summary>
     [ObservableProperty]
-    public partial string HostAddress { get; set; } = string.Empty;
+    public partial string HostAddress { get; set; }
 
-    partial void OnHostAddressChanged(string value)
-    {
-        Preferences.Default.Set(PrefHostAddress, value);
-    }
+    partial void OnHostAddressChanged(string value) => Preferences.Default.Set(PrefHostAddress, value);
 
     /// <summary>
     /// ポート番号
@@ -180,8 +171,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     public partial string Port { get; set; } = StreamingConstants.DefaultPort.ToString(CultureInfo.InvariantCulture);
 
-    [ObservableProperty]
-    public partial string StatusMessage { get; set; } = "切断済み";
+    [ObservableProperty] public partial string StatusMessage { get; set; } = "切断済み";
 
     /// <summary>
     /// 接続中
@@ -198,44 +188,30 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// <summary>
     /// 彩度
     /// </summary>
-    [ObservableProperty]
-    private float _saturation = 1.0f;
+    [ObservableProperty] private float _saturation = 1.0f;
 
-    partial void OnSaturationChanged(float value)
-    {
-        Preferences.Default.Set(PrefSaturation, value);
-    }
+    partial void OnSaturationChanged(float value) => Preferences.Default.Set(PrefSaturation, value);
 
     /// <summary>
     /// コントラスト
     /// </summary>
-    [ObservableProperty]
-    private float _contrast = 1.0f;
+    [ObservableProperty] private float _contrast = 1.0f;
 
-    partial void OnContrastChanged(float value)
-    {
-        Preferences.Default.Set(PrefContrast, value);
-    }
+    partial void OnContrastChanged(float value) => Preferences.Default.Set(PrefContrast, value);
 
     /// <summary>
     /// 明るさ
     /// </summary>
-    [ObservableProperty]
-    private float _brightness = 0.0f;
+    [ObservableProperty] private float _brightness = 0.0f;
 
-    partial void OnBrightnessChanged(float value)
-    {
-        Preferences.Default.Set(PrefBrightness, value);
-    }
+    partial void OnBrightnessChanged(float value) => Preferences.Default.Set(PrefBrightness, value);
 
     /// <summary>
     /// 音量 (0.0 〜 1.0)
     /// </summary>
-    public float Volume
-    {
+    public float Volume {
         get => _audioPlayer.Volume;
-        set
-        {
+        set {
             _audioPlayer.Volume = value;
             OnPropertyChanged();
         }
@@ -244,11 +220,9 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// <summary>
     /// ミュート状態
     /// </summary>
-    public bool IsMuted
-    {
+    public bool IsMuted {
         get => _audioPlayer.IsMuted;
-        set
-        {
+        set {
             _audioPlayer.IsMuted = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(MuteIcon));
@@ -269,16 +243,13 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// 接続
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanConnect))]
-    private async Task ConnectAsync()
-    {
-        if (string.IsNullOrWhiteSpace(HostAddress))
-        {
+    private async Task ConnectAsync() {
+        if (string.IsNullOrWhiteSpace(HostAddress)) {
             StatusMessage = "ホストアドレスを入力してください";
             return;
         }
 
-        if (!int.TryParse(Port, out var portNumber) || portNumber < 1 || portNumber > 65535)
-        {
+        if (!int.TryParse(Port, out var portNumber) || portNumber < 1 || portNumber > 65535) {
             StatusMessage = "有効なポート番号を入力してください";
             return;
         }
@@ -286,68 +257,52 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
         IsConnecting = true;
         StatusMessage = "接続中...";
 
-        try
-        {
+        try {
             _connectionTokenSource = new CancellationTokenSource();
-            
+
             // ビデオ接続
             await _streamClient.ConnectAsync(HostAddress, portNumber, _connectionTokenSource.Token);
 
             // オーディオ接続は試行するが、失敗してもビデオが繋がっていれば続行する
-            bool audioConnected = false;
-            try
-            {
+            var audioConnected = false;
+            try {
                 // 音声接続タイムアウトを少し短く設定（5秒）
                 using var audioCts = new CancellationTokenSource(5000);
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_connectionTokenSource.Token, audioCts.Token);
-                
+                using var linkedCts =
+                    CancellationTokenSource.CreateLinkedTokenSource(_connectionTokenSource.Token, audioCts.Token);
+
                 await _audioClient.ConnectAsync(HostAddress, portNumber + 1, linkedCts.Token);
                 _audioPlayer.Start(StreamingConstants.AudioSampleRate, StreamingConstants.AudioChannels);
                 audioConnected = true;
-            }
-            catch (Exception)
-            {
+            } catch (Exception) {
                 // 音声接続失敗 ログを出力して続行
             }
 
             IsConnected = true;
-            if (audioConnected)
-            {
+            if (audioConnected) {
                 StatusMessage = $"{HostAddress} に接続済み (映像+音声)";
-            }
-            else
-            {
+            } else {
                 StatusMessage = $"{HostAddress} に接続済み (映像のみ)";
             }
-        }
-        catch (OperationCanceledException)
-        {
+        } catch (OperationCanceledException) {
             Disconnect();
             StatusMessage = "接続がキャンセルされました";
-        }
-        catch (Exception ex)
-        {
+        } catch (Exception ex) {
             Disconnect();
             StatusMessage = $"接続エラー: {ex.Message}";
-        }
-        finally
-        {
+        } finally {
             IsConnecting = false;
         }
     }
 
     [RelayCommand]
-    private void ToggleMute()
-    {
-        IsMuted = !IsMuted;
-    }
+    private void ToggleMute() => IsMuted = !IsMuted;
 
     /// <summary>
     /// 接続を切断
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanDisconnect))]
-    private void Disconnect()
-    {
+    private void Disconnect() {
         _connectionTokenSource?.Cancel();
         _streamClient.Disconnect();
         _audioClient.Disconnect();
@@ -361,8 +316,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// スライダーの値をデフォルトにリセット
     /// </summary>
     [RelayCommand]
-    private void ResetSliders()
-    {
+    private void ResetSliders() {
         Saturation = 1.0f;
         Contrast = 1.0f;
         Brightness = 0.0f;
@@ -387,16 +341,14 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// <summary>
     /// 音声受信時のイベントハンドラ
     /// </summary>
-    private void OnAudioReceived(object? sender, AudioEventArgs e)
-    {
+    private void OnAudioReceived(object? sender, AudioEventArgs e) {
         _audioPlayer.AddSamples(e.Audio.PcmData);
     }
 
     /// <summary>
     /// フレーム受信時のイベントハンドラ
     /// </summary>
-    private void OnFrameReceived(object? sender, FrameEventArgs e)
-    {
+    private void OnFrameReceived(object? sender, FrameEventArgs e) {
         var handler = FrameUpdated;
         handler?.Invoke(this, e.Frame.JpegData);
     }
@@ -404,8 +356,7 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// <summary>
     /// IsConnected プロパティ変更時に呼び出し
     /// </summary>
-    partial void OnIsConnectedChanged(bool value)
-    {
+    partial void OnIsConnectedChanged(bool value) {
         ConnectCommand.NotifyCanExecuteChanged();
         DisconnectCommand.NotifyCanExecuteChanged();
     }
@@ -413,18 +364,13 @@ public partial class MainPageViewModel : ObservableObject, IDisposable
     /// <summary>
     /// IsConnecting プロパティ変更時に呼び出し
     /// </summary>
-    partial void OnIsConnectingChanged(bool value)
-    {
-        ConnectCommand.NotifyCanExecuteChanged();
-    }
+    partial void OnIsConnectingChanged(bool value) => ConnectCommand.NotifyCanExecuteChanged();
 
     /// <summary>
     /// リソースを解放
     /// </summary>
-    public void Dispose()
-    {
-        if (_disposed)
-        {
+    public void Dispose() {
+        if (_disposed) {
             return;
         }
 
