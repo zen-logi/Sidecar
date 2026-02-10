@@ -13,7 +13,12 @@ namespace Sidecar.Host.Services;
 /// <see cref="CameraService"/> クラスの新しいインスタンスを初期化
 /// </remarks>
 /// <param name="logger">ロガー</param>
-public sealed class CameraService(ILogger<CameraService> logger) : ICameraService, IDisposable {
+/// <param name="formatInterceptor">フォーマット決定サービス</param>
+/// <param name="gpuPipeline">GPU処理パイプライン</param>
+public sealed class CameraService(
+    ILogger<CameraService> logger,
+    IFormatInterceptor formatInterceptor,
+    IGpuPipelineService gpuPipeline) : ICameraService, IDisposable {
     private CaptureDevice? _captureDevice;
     private VideoCharacteristics? _characteristics;
     private byte[]? _latestFrame;
@@ -54,26 +59,48 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
 
         var targetDescriptor = descriptorList[deviceIndex];
 
-        // 戦略: JPEG/MJPGを優先 (パススルー) > YUYV (変換) > その他
-        var characteristics = targetDescriptor.Characteristics
+        // 優先度順に候補を列挙: JPEG > YUYV > NV12 > その他、同形式内は高解像度優先
+        var candidates = targetDescriptor.Characteristics
             .OrderByDescending(c => c.PixelFormat == PixelFormats.JPEG)
             .ThenByDescending(c => c.PixelFormat == PixelFormats.YUYV)
-            .ThenByDescending(c => c.Width * c.Height) // 高解像度を優先
-            .FirstOrDefault() ?? targetDescriptor.Characteristics.FirstOrDefault();
+            .ThenByDescending(c => c.Width * c.Height)
+            .ToList();
 
-        if (characteristics == null) {
+        if (candidates.Count == 0)
             throw new InvalidOperationException("デバイスの有効な特性が見つからない");
+
+        // GPU処理パイプラインを初期化
+        gpuPipeline.Initialize();
+
+        // フォールバック付きでデバイスをオープン (設定不可能な候補はスキップ)
+        foreach (var candidate in candidates) {
+            try {
+                logger.LogInformation(
+                    "フォーマット試行: {Format}, {Width}x{Height} @ {Fps}",
+                    candidate.PixelFormat, candidate.Width, candidate.Height, candidate.FramesPerSecond);
+
+                _captureDevice = await targetDescriptor.OpenAsync(candidate, OnPixelBufferArrived, ct: cancellationToken);
+                await _captureDevice.StartAsync(cancellationToken);
+
+                // 成功した場合のみ保持
+                _characteristics = candidate;
+                formatInterceptor.DetermineFormat(candidate.PixelFormat.ToString());
+
+                logger.LogInformation("Started FlashCap on {DeviceName} ({Format} {Width}x{Height})",
+                    targetDescriptor.Name, candidate.PixelFormat, candidate.Width, candidate.Height);
+                return;
+            } catch (ArgumentException ex) {
+                logger.LogWarning("フォーマット設定失敗 ({Format} {Width}x{Height}): {Message}",
+                    candidate.PixelFormat, candidate.Width, candidate.Height, ex.Message);
+                // 失敗した場合、次の候補へフォールバック
+                if (_captureDevice is not null) {
+                    _captureDevice.Dispose();
+                    _captureDevice = null;
+                }
+            }
         }
 
-        // コールバックで使用するために保持
-        _characteristics = characteristics;
-
-        logger.LogInformation($"Selected Format: {characteristics.PixelFormat}, {characteristics.Width}x{characteristics.Height} @ {characteristics.FramesPerSecond}");
-
-        _captureDevice = await targetDescriptor.OpenAsync(characteristics, OnPixelBufferArrived, ct: cancellationToken);
-        await _captureDevice.StartAsync(cancellationToken);
-
-        logger.LogInformation($"Started FlashCap on {targetDescriptor.Name}");
+        throw new InvalidOperationException("すべてのフォーマット候補が失敗した");
     }
 
     /// <summary>
@@ -84,34 +111,21 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
         try {
             byte[] jpegData;
 
-
-
             // 1. MJPG/JPEGの場合、高速パス (そのままコピー)
             if (_characteristics?.PixelFormat == PixelFormats.JPEG) {
                 jpegData = scope.Buffer.CopyImage();
             } else {
-                // 2. YUY2などの場合、変換を確認
-                // FlashCapのExtractImageは通常BMP/RGBに変換する
-                // ストリーム用にJPEGに圧縮する必要がある
-                // 注意: これはCPU負荷が高い
+                // 2. YUY2/NV12/RGBの場合、GPU処理パイプラインで変換
+                var imageData = scope.Buffer.CopyImage();
+                var width = _characteristics?.Width ?? 0;
+                var height = _characteristics?.Height ?? 0;
 
-                // FlashCapのデフォルト変換が良くない場合は手動でYUY2を処理する可能性があるが
-                // まずは標準のトランスコードを試す
-                var imageData = scope.Buffer.ExtractImage();
+                // Interceptorから現在のフォーマット設定を取得
+                var inputFormat = formatInterceptor.InputFormat;
+                var enableToneMap = formatInterceptor.EnableToneMap;
 
-                // imageDataはおそらくBMP形式 (ヘッダー + データ)
-                // BMPをJPEGに変換する必要がある
-
-                // 参照により OpenCvSharp があるため、柔軟なエンコードに使用可能
-                // scope.Buffer.ExtractImage() は完全なBMPファイル配列を返す
-
-                // 現状は基本的な抽出に依存する
-                // BMPであれば、OpenCVを使用してバッファをデコードし、JPEGにエンコードできる
-                using var mat = OpenCvSharp.Cv2.ImDecode(imageData, OpenCvSharp.ImreadModes.Color);
-                if (mat.Empty())
-                    return; // デコード失敗
-
-                _ = OpenCvSharp.Cv2.ImEncode(".jpg", mat, out jpegData, [(int)OpenCvSharp.ImwriteFlags.JpegQuality, StreamingConstants.JpegQuality]);
+                // GPU処理実行
+                jpegData = gpuPipeline.ProcessFrame(imageData, width, height, inputFormat, enableToneMap);
             }
 
             var frameNumber = Interlocked.Increment(ref _frameNumber);
@@ -145,5 +159,3 @@ public sealed class CameraService(ILogger<CameraService> logger) : ICameraServic
         _disposed = true;
     }
 }
-
-
