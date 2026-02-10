@@ -18,6 +18,10 @@ public static class HostServiceExtensions {
     /// <param name="services">サービスコレクション</param>
     /// <returns>サービスコレクション</returns>
     public static IServiceCollection AddSidecarHostServices(this IServiceCollection services) {
+        // GPU Pipeline services
+        _ = services.AddSingleton<IFormatInterceptor, FormatInterceptor>();
+        _ = services.AddSingleton<IGpuPipelineService, GpuPipelineService>();
+
         // Video services
         _ = services.AddSingleton<ICameraService, CameraService>();
         _ = services.AddSingleton<IStreamServer, StreamServer>();
