@@ -79,7 +79,7 @@ public sealed class CameraService(
                     "フォーマット試行: {Format}, {Width}x{Height} @ {Fps}",
                     candidate.PixelFormat, candidate.Width, candidate.Height, candidate.FramesPerSecond);
 
-                _captureDevice = await targetDescriptor.OpenAsync(candidate, OnPixelBufferArrived, ct: cancellationToken);
+                _captureDevice = await targetDescriptor.OpenAsync(candidate, pixelBufferArrived: OnPixelBufferArrived, transcodeFormat: TranscodeFormats.DoNotTranscode, ct: cancellationToken);
                 await _captureDevice.StartAsync(cancellationToken);
 
                 // 成功した場合のみ保持
