@@ -52,6 +52,11 @@ public enum VideoInputFormat {
     Nv12,
 
     /// <summary>
+    /// UYVY形式 (4:2:2 YUV, U-Y-V-Y順)
+    /// </summary>
+    Uyvy,
+
+    /// <summary>
     /// 不明なフォーマット
     /// </summary>
     Unknown

@@ -58,11 +58,13 @@ public sealed class FormatInterceptor(ILogger<FormatInterceptor> logger) : IForm
             // 新CLI構文 (設計書準拠: mode xxx)
             "mode auto" => ResetOverride(),
             "mode yuy2" or "mode yuyv" => SetOverride(VideoInputFormat.Yuy2, "YUY2"),
+            "mode uyvy" => SetOverride(VideoInputFormat.Uyvy, "UYVY"),
             "mode nv12" => SetOverride(VideoInputFormat.Nv12, "NV12"),
             "mode rgb" => SetOverride(VideoInputFormat.Rgb, "RGB"),
 
             // 後方互換CLI構文 (既存: force xxx)
             "force yuy2" or "force yuyv" => SetOverride(VideoInputFormat.Yuy2, "YUY2"),
+            "force uyvy" => SetOverride(VideoInputFormat.Uyvy, "UYVY"),
             "force rgb" => SetOverride(VideoInputFormat.Rgb, "RGB"),
             "force nv12" => SetOverride(VideoInputFormat.Nv12, "NV12"),
             "reset" => ResetOverride(),
@@ -152,6 +154,7 @@ public sealed class FormatInterceptor(ILogger<FormatInterceptor> logger) : IForm
 
         return normalized switch {
             "YUY2" or "YUYV" => VideoInputFormat.Yuy2,
+            "UYVY" => VideoInputFormat.Uyvy,
             "NV12" => VideoInputFormat.Nv12,
             "RGB" or "RGB24" or "RGB32" or "ARGB" => VideoInputFormat.Rgb,
             _ => VideoInputFormat.Unknown

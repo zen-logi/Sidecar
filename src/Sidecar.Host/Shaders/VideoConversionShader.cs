@@ -94,6 +94,9 @@ public readonly partial struct VideoConversionShader : IComputeShader {
         } else if (formatMode == 1) {
             // YUY2デコード: パック4バイト [Y0, U, Y1, V]
             rgb = DecodeYuy2(x, y);
+        } else if (formatMode == 3) {
+            // UYVYデコード: パック4バイト [U, Y0, V, Y1]
+            rgb = DecodeUyvy(x, y);
         } else {
             // RGBスルーパス
             rgb = DecodeRgb(x, y);
@@ -157,6 +160,28 @@ public readonly partial struct VideoConversionShader : IComputeShader {
         var u = ReadByte(baseByteIndex + 1) - 0.5f;
         var y1 = ReadByte(baseByteIndex + 2);
         var v = ReadByte(baseByteIndex + 3) - 0.5f;
+
+        // 偶数ピクセル=Y0, 奇数ピクセル=Y1
+        var yVal = (x % 2 == 0) ? y0 : y1;
+
+        return YuvToRgb(yVal, u, v);
+    }
+
+    /// <summary>
+    /// UYVYフォーマットのデコード (4:2:2 パックYUV)
+    /// </summary>
+    /// <param name="x">ピクセルX座標</param>
+    /// <param name="y">ピクセルY座標</param>
+    /// <returns>デコードされたRGB値</returns>
+    private Float3 DecodeUyvy(int x, int y) {
+        // UYVY: 4バイトで2ピクセル [U, Y0, V, Y1]
+        var pixelPairIndex = x / 2;
+        var baseByteIndex = ((y * width) + (pixelPairIndex * 2)) * 2;
+
+        var u = ReadByte(baseByteIndex) - 0.5f;
+        var y0 = ReadByte(baseByteIndex + 1);
+        var v = ReadByte(baseByteIndex + 2) - 0.5f;
+        var y1 = ReadByte(baseByteIndex + 3);
 
         // 偶数ピクセル=Y0, 奇数ピクセル=Y1
         var yVal = (x % 2 == 0) ? y0 : y1;

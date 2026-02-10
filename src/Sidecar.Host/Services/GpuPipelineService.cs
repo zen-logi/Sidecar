@@ -62,6 +62,7 @@ public sealed class GpuPipelineService(ILogger<GpuPipelineService> logger) : IGp
         var formatMode = inputFormat switch {
             VideoInputFormat.Yuy2 => 1,
             VideoInputFormat.Nv12 => 2,
+            VideoInputFormat.Uyvy => 3,
             _ => 0
         };
 
