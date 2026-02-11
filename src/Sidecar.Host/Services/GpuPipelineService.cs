@@ -134,23 +134,23 @@ public sealed class GpuPipelineService(ILogger<GpuPipelineService> logger) : IGp
     }
 
     /// <summary>
-    /// Float4配列をRGB24バイト配列に変換
+    /// Float4配列をBGR24バイト配列に変換 (OpenCvSharpはBGR順を期待)
     /// </summary>
     /// <param name="pixels">Float4ピクセル配列</param>
     /// <param name="width">画像幅</param>
     /// <param name="height">画像高さ</param>
-    /// <returns>RGB24バイト配列</returns>
+    /// <returns>BGR24バイト配列</returns>
     private static byte[] ConvertToRgb24(Float4[] pixels, int width, int height) {
-        var rgb24 = new byte[width * height * 3];
+        var bgr24 = new byte[width * height * 3];
 
         for (var i = 0; i < pixels.Length; i++) {
             var pixel = pixels[i];
-            rgb24[i * 3] = (byte)(pixel.X * 255f);
-            rgb24[(i * 3) + 1] = (byte)(pixel.Y * 255f);
-            rgb24[(i * 3) + 2] = (byte)(pixel.Z * 255f);
+            bgr24[i * 3] = (byte)(pixel.Z * 255f);       // B ← Float4.Z
+            bgr24[(i * 3) + 1] = (byte)(pixel.Y * 255f); // G ← Float4.Y
+            bgr24[(i * 3) + 2] = (byte)(pixel.X * 255f); // R ← Float4.X
         }
 
-        return rgb24;
+        return bgr24;
     }
 
     /// <summary>
