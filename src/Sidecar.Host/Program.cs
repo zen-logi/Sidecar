@@ -121,7 +121,7 @@ try {
     }
     Console.WriteLine("Ctrl+C で終了");
     Console.WriteLine("\nCLIコマンド:");
-    Console.WriteLine("  mode auto|yuy2|uyvy|nv12|rgb  - 入力フォーマットを切替 (紫/緑画面対策)");
+    Console.WriteLine("  mode auto|yuy2|uyvy|yvyu|vyuy|nv12|rgb  - 入力フォーマットを切替 (紫/緑/モザイク対策)");
     Console.WriteLine("  hdr on|off                    - HDRトーンマッピングを切替 (白飛び対策)");
     Console.WriteLine("  status                   - 現在のパイプライン状態を表示");
     Console.WriteLine();

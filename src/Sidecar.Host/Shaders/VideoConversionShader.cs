@@ -97,6 +97,12 @@ public readonly partial struct VideoConversionShader : IComputeShader {
         } else if (formatMode == 3) {
             // UYVYデコード: パック4バイト [U, Y0, V, Y1]
             rgb = DecodeUyvy(x, y);
+        } else if (formatMode == 4) {
+            // YVYUデコード: パック4バイト [Y0, V, Y1, U]
+            rgb = DecodeYvyu(x, y);
+        } else if (formatMode == 5) {
+            // VYUYデコード: パック4バイト [V, Y0, U, Y1]
+            rgb = DecodeVyuy(x, y);
         } else {
             // RGBスルーパス
             rgb = DecodeRgb(x, y);
@@ -186,6 +192,46 @@ public readonly partial struct VideoConversionShader : IComputeShader {
         // 偶数ピクセル=Y0, 奇数ピクセル=Y1
         var yVal = (x % 2 == 0) ? y0 : y1;
 
+        return YuvToRgb(yVal, u, v);
+    }
+
+    /// <summary>
+    /// YVYUフォーマットのデコード (4:2:2 パックYUV)
+    /// </summary>
+    /// <param name="x">ピクセルX座標</param>
+    /// <param name="y">ピクセルY座標</param>
+    /// <returns>デコードされたRGB値</returns>
+    private Float3 DecodeYvyu(int x, int y) {
+        // YVYU: 4バイトで2ピクセル [Y0, V, Y1, U]
+        var pixelPairIndex = x / 2;
+        var baseByteIndex = ((y * width) + (pixelPairIndex * 2)) * 2;
+
+        var y0 = ReadByte(baseByteIndex);
+        var v = ReadByte(baseByteIndex + 1) - 0.5f;  // V first
+        var y1 = ReadByte(baseByteIndex + 2);
+        var u = ReadByte(baseByteIndex + 3) - 0.5f;  // U second
+
+        var yVal = (x % 2 == 0) ? y0 : y1;
+        return YuvToRgb(yVal, u, v);
+    }
+
+    /// <summary>
+    /// VYUYフォーマットのデコード (4:2:2 パックYUV)
+    /// </summary>
+    /// <param name="x">ピクセルX座標</param>
+    /// <param name="y">ピクセルY座標</param>
+    /// <returns>デコードされたRGB値</returns>
+    private Float3 DecodeVyuy(int x, int y) {
+        // VYUY: 4バイトで2ピクセル [V, Y0, U, Y1]
+        var pixelPairIndex = x / 2;
+        var baseByteIndex = ((y * width) + (pixelPairIndex * 2)) * 2;
+
+        var v = ReadByte(baseByteIndex) - 0.5f;      // V first
+        var y0 = ReadByte(baseByteIndex + 1);
+        var u = ReadByte(baseByteIndex + 2) - 0.5f;  // U second
+        var y1 = ReadByte(baseByteIndex + 3);
+
+        var yVal = (x % 2 == 0) ? y0 : y1;
         return YuvToRgb(yVal, u, v);
     }
 

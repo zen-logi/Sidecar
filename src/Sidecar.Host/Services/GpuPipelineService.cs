@@ -63,6 +63,8 @@ public sealed class GpuPipelineService(ILogger<GpuPipelineService> logger) : IGp
             VideoInputFormat.Yuy2 => 1,
             VideoInputFormat.Nv12 => 2,
             VideoInputFormat.Uyvy => 3,
+            VideoInputFormat.Yvyu => 4,
+            VideoInputFormat.Vyuy => 5,
             _ => 0
         };
 
