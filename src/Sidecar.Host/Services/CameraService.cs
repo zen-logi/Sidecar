@@ -126,11 +126,19 @@ public sealed class CameraService(
                     DumpRawBytes(stripped, width, height);
                 }
 
-                // CPU検証フレーム保存
+                // BMP直接保存（DirectShow出力確認用）
                 if (formatInterceptor.VerifyRequested) {
                     formatInterceptor.VerifyRequested = false;
-                    var stripped = StripBmpHeader(imageData, width, height);
-                    SaveVerifyFrames(stripped, width, height);
+                    var outputDir = AppDomain.CurrentDomain.BaseDirectory;
+                    var bmpPath = Path.Combine(outputDir, "verify_direct.bmp");
+                    File.WriteAllBytes(bmpPath, imageData);
+                    Console.WriteLine($"DirectShow BMP直接保存: {bmpPath} ({imageData.Length} bytes)");
+                    Console.WriteLine($"先頭4バイト: {imageData[0]:X2} {imageData[1]:X2} {imageData[2]:X2} {imageData[3]:X2}");
+                    if (imageData.Length > 28) {
+                        var bpp = BitConverter.ToInt16(imageData, 28);
+                        Console.WriteLine($"BMP bitsPerPixel: {bpp}");
+                    }
+                    Console.WriteLine("Windowsで verify_direct.bmp を開いて色を確認してください。");
                 }
 
                 // BMPヘッダー検出: FlashCap Auto変換済み→OpenCvSharpで直接デコード
