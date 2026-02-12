@@ -120,6 +120,9 @@ public sealed class CameraService(
                 var width = _characteristics?.Width ?? 0;
                 var height = _characteristics?.Height ?? 0;
 
+                // BMPヘッダーの検出と除去
+                imageData = StripBmpHeader(imageData, width, height);
+
                 // RAWバイトダンプ (診断用)
                 if (formatInterceptor.DumpRequested) {
                     formatInterceptor.DumpRequested = false;
@@ -156,6 +159,48 @@ public sealed class CameraService(
 
     /// <inheritdoc/>
     public byte[]? GetLatestFrame() => Volatile.Read(ref _latestFrame);
+
+    /// <summary>
+    /// BMPヘッダーを検出して除去し、ピクセルデータのみを返す
+    /// </summary>
+    /// <param name="data">CopyImage()の生バッファ</param>
+    /// <param name="width">フレーム幅</param>
+    /// <param name="height">フレーム高さ</param>
+    /// <returns>ヘッダー除去済みのピクセルデータ</returns>
+    private byte[] StripBmpHeader(byte[] data, int width, int height) {
+        // BMPマジック "BM" (0x42 0x4D) を検出
+        if (data.Length < 54 || data[0] != 0x42 || data[1] != 0x4D)
+            return data; // BMPヘッダーなし → そのまま返す
+
+        // ピクセルデータオフセットを読み取り (バイト10-13, リトルエンディアン)
+        var pixelOffset = BitConverter.ToInt32(data, 10);
+
+        // biHeight を読み取り (バイト22-25, リトルエンディアン) — 正の場合ボトムアップ
+        var biHeight = BitConverter.ToInt32(data, 22);
+        var isBottomUp = biHeight > 0;
+        var absHeight = Math.Abs(biHeight);
+
+        // ピクセルデータを抽出
+        var pixelDataLength = data.Length - pixelOffset;
+        var pixelData = new byte[pixelDataLength];
+
+        if (isBottomUp) {
+            // ボトムアップ → トップダウンに行を反転
+            var stride = pixelDataLength / absHeight;
+            for (var row = 0; row < absHeight; row++) {
+                var srcOffset = pixelOffset + ((absHeight - 1 - row) * stride);
+                var dstOffset = row * stride;
+                Buffer.BlockCopy(data, srcOffset, pixelData, dstOffset, stride);
+            }
+            logger.LogDebug("BMPヘッダー除去 + ボトムアップ反転 (offset={Offset}, stride={Stride})", pixelOffset, stride);
+        } else {
+            // トップダウン → そのままコピー
+            Buffer.BlockCopy(data, pixelOffset, pixelData, 0, pixelDataLength);
+            logger.LogDebug("BMPヘッダー除去 (offset={Offset})", pixelOffset);
+        }
+
+        return pixelData;
+    }
 
     /// <summary>
     /// RAWバッファの診断情報をコンソールに出力
