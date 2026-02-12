@@ -129,6 +129,12 @@ public sealed class CameraService(
                     DumpRawBytes(imageData, width, height);
                 }
 
+                // CPU検証フレーム保存 (OpenCvSharp CvtColorでYUY2→BGR変換)
+                if (formatInterceptor.VerifyRequested) {
+                    formatInterceptor.VerifyRequested = false;
+                    SaveVerifyFrames(imageData, width, height);
+                }
+
                 // Interceptorから現在のフォーマット設定を取得
                 var inputFormat = formatInterceptor.InputFormat;
                 var enableToneMap = formatInterceptor.EnableToneMap;
@@ -159,6 +165,60 @@ public sealed class CameraService(
 
     /// <inheritdoc/>
     public byte[]? GetLatestFrame() => Volatile.Read(ref _latestFrame);
+
+    /// <summary>
+    /// OpenCvSharp CPU変換で検証フレームを保存
+    /// </summary>
+    private void SaveVerifyFrames(byte[] yuvData, int width, int height) {
+        try {
+            var outputDir = AppDomain.CurrentDomain.BaseDirectory;
+
+            // 1. RAW YUVデータをそのまま保存
+            var rawPath = Path.Combine(outputDir, "verify_raw.bin");
+            File.WriteAllBytes(rawPath, yuvData);
+            Console.WriteLine($"RAWデータ保存: {rawPath} ({yuvData.Length} bytes)");
+
+            // 2. OpenCvSharp CvtColor で YUY2→BGR 変換 (CPU)
+            using var yuvMat = new OpenCvSharp.Mat(height, width, OpenCvSharp.MatType.CV_8UC2);
+            System.Runtime.InteropServices.Marshal.Copy(yuvData, 0, yuvMat.Data, Math.Min(yuvData.Length, width * height * 2));
+
+            using var bgrMat = new OpenCvSharp.Mat();
+            OpenCvSharp.Cv2.CvtColor(yuvMat, bgrMat, OpenCvSharp.ColorConversionCodes.YUV2BGR_YUY2);
+
+            var cpuPath = Path.Combine(outputDir, "verify_cpu.jpg");
+            OpenCvSharp.Cv2.ImWrite(cpuPath, bgrMat);
+            Console.WriteLine($"CPU変換JPEG保存: {cpuPath}");
+
+            // 3. 中央ピクセルのBGR値を出力
+            var cx = width / 2;
+            var cy = height / 2;
+            var centerPixel = bgrMat.At<OpenCvSharp.Vec3b>(cy, cx);
+            Console.WriteLine($"中央ピクセル BGR (CPU): B={centerPixel.Item0}, G={centerPixel.Item1}, R={centerPixel.Item2}");
+
+            // 4. 手動YUV→RGB計算 (BT.601) を出力
+            var yuvOffset = (cy * width + cx) * 2;
+            if (yuvOffset + 3 < yuvData.Length) {
+                var yVal = yuvData[yuvOffset];
+                var uVal = yuvData[yuvOffset + 1];
+                var y1Val = yuvData[yuvOffset + 2];
+                var vVal = yuvData[yuvOffset + 3];
+                Console.WriteLine($"中央YUV: Y={yVal} U={uVal} Y1={y1Val} V={vVal}");
+
+                // BT.601 limited range
+                var c = yVal - 16;
+                var d = uVal - 128;
+                var e = vVal - 128;
+                var rr = Math.Clamp((298 * c + 409 * e + 128) >> 8, 0, 255);
+                var gg = Math.Clamp((298 * c - 100 * d - 208 * e + 128) >> 8, 0, 255);
+                var bb = Math.Clamp((298 * c + 516 * d + 128) >> 8, 0, 255);
+                Console.WriteLine($"手動BT.601変換: R={rr}, G={gg}, B={bb}");
+            }
+
+            Console.WriteLine("検証ファイル保存完了！");
+        } catch (Exception ex) {
+            Console.WriteLine($"検証フレーム保存エラー: {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// BMPヘッダーを検出して除去し、ピクセルデータのみを返す

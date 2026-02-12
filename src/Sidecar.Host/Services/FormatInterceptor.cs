@@ -23,6 +23,11 @@ public sealed class FormatInterceptor(ILogger<FormatInterceptor> logger) : IForm
     /// <inheritdoc/>
     public bool DumpRequested { get; set; }
 
+    /// <summary>
+    /// 次のフレームをCPU変換してファイル保存するフラグ
+    /// </summary>
+    public bool VerifyRequested { get; set; }
+
     /// <inheritdoc/>
     public VideoInputFormat InputFormat {
         get {
@@ -83,6 +88,9 @@ public sealed class FormatInterceptor(ILogger<FormatInterceptor> logger) : IForm
 
             // RAWバイトダンプ
             "dump" => RequestDump(),
+
+            // CPU検証フレーム保存
+            "verify" => RequestVerify(),
 
             _ => LogUnknownCommand(command)
         };
@@ -148,6 +156,16 @@ public sealed class FormatInterceptor(ILogger<FormatInterceptor> logger) : IForm
     private bool RequestDump() {
         DumpRequested = true;
         logger.LogInformation("次のフレームでRAWバイトダンプを実行します...");
+        return true;
+    }
+
+    /// <summary>
+    /// CPU検証フレーム保存要求をセット
+    /// </summary>
+    /// <returns>常にtrue</returns>
+    private bool RequestVerify() {
+        VerifyRequested = true;
+        logger.LogInformation("次のフレームをCPU変換してファイル保存します...");
         return true;
     }
 

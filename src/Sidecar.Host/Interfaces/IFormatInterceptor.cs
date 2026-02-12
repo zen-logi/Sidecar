@@ -35,6 +35,11 @@ public interface IFormatInterceptor {
     /// 次のフレームのRAWバイトダンプを要求するフラグ
     /// </summary>
     bool DumpRequested { get; set; }
+
+    /// <summary>
+    /// 次のフレームをCPU変換してファイル保存するフラグ
+    /// </summary>
+    bool VerifyRequested { get; set; }
 }
 
 /// <summary>
