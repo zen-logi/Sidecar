@@ -30,6 +30,7 @@ var cameraService = serviceProvider.GetRequiredService<ICameraService>();
 var streamServer = serviceProvider.GetRequiredService<IStreamServer>();
 var audioService = serviceProvider.GetRequiredService<IAudioService>();
 var audioStreamServer = serviceProvider.GetRequiredService<IAudioStreamServer>();
+var formatInterceptor = serviceProvider.GetRequiredService<IFormatInterceptor>();
 
 using var cts = new CancellationTokenSource();
 
@@ -118,14 +119,36 @@ try {
     if (selectedAudioDeviceId is not null) {
         Console.WriteLine($"オーディオ: tcp://<このPCのIPアドレス>:{audioPort}");
     }
-    Console.WriteLine("Ctrl+C で終了\n");
+    Console.WriteLine("Ctrl+C で終了");
+    Console.WriteLine("\nCLIコマンド:");
+    Console.WriteLine("  mode auto|yuy2|uyvy|yvyu|vyuy|nv12|rgb  - 入力フォーマットを切替 (紫/緑/モザイク対策)");
+    Console.WriteLine("  hdr on|off                    - HDRトーンマッピングを切替 (白飛び対策)");
+    Console.WriteLine("  status                   - 現在のパイプライン状態を表示");
+    Console.WriteLine();
 
-    // メインループ
+    // メインループ: ステータス表示 + CLI入力の統合
+    var lastStatusTime = DateTime.MinValue;
     while (!cts.Token.IsCancellationRequested) {
-        var audioClientCount = selectedAudioDeviceId is not null ? audioStreamServer.ConnectedClientCount : 0;
-        Console.Write($"\r接続クライアント数 - ビデオ: {streamServer.ConnectedClientCount}, オーディオ: {audioClientCount}   ");
+        // キー入力があればコマンド処理モードに入る
+        if (Console.KeyAvailable) {
+            // ステータス行をクリアしてプロンプト表示
+            Console.Write("\r" + new string(' ', 80) + "\r");
+            Console.Write("> ");
+            var input = Console.ReadLine();
+            if (!string.IsNullOrWhiteSpace(input)) {
+                formatInterceptor.ProcessCommand(input);
+            }
+        }
+
+        // 1秒ごとにステータス表示を更新
+        if ((DateTime.UtcNow - lastStatusTime).TotalSeconds >= 1.0) {
+            var audioClientCount = selectedAudioDeviceId is not null ? audioStreamServer.ConnectedClientCount : 0;
+            Console.Write($"\r接続数 - ビデオ: {streamServer.ConnectedClientCount}, オーディオ: {audioClientCount}   ");
+            lastStatusTime = DateTime.UtcNow;
+        }
+
         try {
-            await Task.Delay(1000, cts.Token);
+            await Task.Delay(100, cts.Token);
         } catch (OperationCanceledException) {
             break;
         }

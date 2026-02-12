@@ -16,8 +16,7 @@ namespace Sidecar.Client.Services;
 /// <summary>
 /// Windows環境におけるNAudioを使用した音声再生サービス
 /// </summary>
-public sealed class AudioPlayerService : IAudioPlayerService
-{
+public sealed class AudioPlayerService : IAudioPlayerService {
     private bool _isMuted;
     private float _volume = 1.0f;
     private bool _isPlaying;
@@ -34,11 +33,9 @@ public sealed class AudioPlayerService : IAudioPlayerService
 #endif
 
     /// <inheritdoc />
-    public float Volume
-    {
+    public float Volume {
         get => _volume;
-        set
-        {
+        set {
             _volume = Math.Clamp(value, 0.0f, 1.0f);
 #if WINDOWS
             if (_volumeProvider != null)
@@ -50,11 +47,9 @@ public sealed class AudioPlayerService : IAudioPlayerService
     }
 
     /// <inheritdoc />
-    public bool IsMuted
-    {
+    public bool IsMuted {
         get => _isMuted;
-        set
-        {
+        set {
             _isMuted = value;
 #if WINDOWS
             if (_volumeProvider != null)
@@ -71,8 +66,7 @@ public sealed class AudioPlayerService : IAudioPlayerService
     /// <summary>
     /// 音声再生を開始
     /// </summary>
-    public void Start(int sampleRate, int channels)
-    {
+    public void Start(int sampleRate, int channels) {
         if (_isPlaying) return;
 
         _sampleRate = sampleRate;
@@ -146,8 +140,7 @@ public sealed class AudioPlayerService : IAudioPlayerService
     /// <summary>
     /// 音声再生を停止
     /// </summary>
-    public void Stop()
-    {
+    public void Stop() {
         if (!_isPlaying) return;
 
 #if WINDOWS
@@ -156,8 +149,9 @@ public sealed class AudioPlayerService : IAudioPlayerService
             try
             {
                 _deviceEnumerator.UnregisterEndpointNotificationCallback(_notificationClient);
+            } catch {
+                // ignored
             }
-            catch { }
         }
 
         _waveOut?.Stop();
@@ -173,8 +167,7 @@ public sealed class AudioPlayerService : IAudioPlayerService
     }
 
     /// <inheritdoc />
-    public void AddSamples(byte[] pcmData)
-    {
+    public void AddSamples(byte[] pcmData) {
         if (!_isPlaying) return;
 
 #if WINDOWS
@@ -183,8 +176,7 @@ public sealed class AudioPlayerService : IAudioPlayerService
     }
 
     /// <inheritdoc />
-    public void Dispose()
-    {
+    public void Dispose() {
         if (_disposed) return;
         Stop();
         _disposed = true;
