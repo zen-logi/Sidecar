@@ -52,6 +52,16 @@ public readonly partial struct VideoConversionShader : IComputeShader {
     public readonly int bytesPerPixel;
 
     /// <summary>
+    /// クロマUオフセット (0.0-1.0スケール, キャプボ補正用)
+    /// </summary>
+    public readonly float chromaOffsetU;
+
+    /// <summary>
+    /// クロマVオフセット (0.0-1.0スケール, キャプボ補正用)
+    /// </summary>
+    public readonly float chromaOffsetV;
+
+    /// <summary>
     /// <see cref="VideoConversionShader"/> 構造体の新しいインスタンスを初期化
     /// </summary>
     /// <param name="rawInput">入力バッファ (バイト列をuintパック)</param>
@@ -61,6 +71,8 @@ public readonly partial struct VideoConversionShader : IComputeShader {
     /// <param name="formatMode">フォーマットモード (0=RGB, 1=YUY2, 2=NV12)</param>
     /// <param name="isHdr">HDRトーンマップフラグ</param>
     /// <param name="bytesPerPixel">RGB時の1ピクセルあたりバイト数</param>
+    /// <param name="chromaOffsetU">クロマUオフセット</param>
+    /// <param name="chromaOffsetV">クロマVオフセット</param>
     public VideoConversionShader(
         ReadWriteBuffer<uint> rawInput,
         ReadWriteTexture2D<Float4> output,
@@ -68,7 +80,9 @@ public readonly partial struct VideoConversionShader : IComputeShader {
         int height,
         int formatMode,
         bool isHdr,
-        int bytesPerPixel) {
+        int bytesPerPixel,
+        float chromaOffsetU,
+        float chromaOffsetV) {
         this.rawInput = rawInput;
         this.output = output;
         this.width = width;
@@ -76,6 +90,8 @@ public readonly partial struct VideoConversionShader : IComputeShader {
         this.formatMode = formatMode;
         this.isHdr = isHdr;
         this.bytesPerPixel = bytesPerPixel;
+        this.chromaOffsetU = chromaOffsetU;
+        this.chromaOffsetV = chromaOffsetV;
     }
 
     /// <inheritdoc/>
@@ -145,8 +161,8 @@ public readonly partial struct VideoConversionShader : IComputeShader {
         // UVプレーン: 2x2ブロック共有, インターリーブ [U, V, U, V, ...]
         var uvRowStart = yPlaneSize + ((y / 2) * width);
         var uvColBase = x & ~1; // 偶数列にアライン
-        var uVal = ReadByte(uvRowStart + uvColBase) - 0.5f;
-        var vVal = ReadByte(uvRowStart + uvColBase + 1) - 0.5f;
+        var uVal = ReadByte(uvRowStart + uvColBase) - 0.5f - chromaOffsetU;
+        var vVal = ReadByte(uvRowStart + uvColBase + 1) - 0.5f - chromaOffsetV;
 
         return YuvToRgb(yVal, uVal, vVal);
     }
@@ -163,9 +179,9 @@ public readonly partial struct VideoConversionShader : IComputeShader {
         var baseByteIndex = ((y * width) + (pixelPairIndex * 2)) * 2;
 
         var y0 = ReadByte(baseByteIndex);
-        var u = ReadByte(baseByteIndex + 1) - 0.5f;
+        var u = ReadByte(baseByteIndex + 1) - 0.5f - chromaOffsetU;
         var y1 = ReadByte(baseByteIndex + 2);
-        var v = ReadByte(baseByteIndex + 3) - 0.5f;
+        var v = ReadByte(baseByteIndex + 3) - 0.5f - chromaOffsetV;
 
         // 偶数ピクセル=Y0, 奇数ピクセル=Y1
         var yVal = (x % 2 == 0) ? y0 : y1;
@@ -184,9 +200,9 @@ public readonly partial struct VideoConversionShader : IComputeShader {
         var pixelPairIndex = x / 2;
         var baseByteIndex = ((y * width) + (pixelPairIndex * 2)) * 2;
 
-        var u = ReadByte(baseByteIndex) - 0.5f;
+        var u = ReadByte(baseByteIndex) - 0.5f - chromaOffsetU;
         var y0 = ReadByte(baseByteIndex + 1);
-        var v = ReadByte(baseByteIndex + 2) - 0.5f;
+        var v = ReadByte(baseByteIndex + 2) - 0.5f - chromaOffsetV;
         var y1 = ReadByte(baseByteIndex + 3);
 
         // 偶数ピクセル=Y0, 奇数ピクセル=Y1
@@ -207,9 +223,9 @@ public readonly partial struct VideoConversionShader : IComputeShader {
         var baseByteIndex = ((y * width) + (pixelPairIndex * 2)) * 2;
 
         var y0 = ReadByte(baseByteIndex);
-        var v = ReadByte(baseByteIndex + 1) - 0.5f;  // V first
+        var v = ReadByte(baseByteIndex + 1) - 0.5f - chromaOffsetV;  // V first
         var y1 = ReadByte(baseByteIndex + 2);
-        var u = ReadByte(baseByteIndex + 3) - 0.5f;  // U second
+        var u = ReadByte(baseByteIndex + 3) - 0.5f - chromaOffsetU;  // U second
 
         var yVal = (x % 2 == 0) ? y0 : y1;
         return YuvToRgb(yVal, u, v);
@@ -226,9 +242,9 @@ public readonly partial struct VideoConversionShader : IComputeShader {
         var pixelPairIndex = x / 2;
         var baseByteIndex = ((y * width) + (pixelPairIndex * 2)) * 2;
 
-        var v = ReadByte(baseByteIndex) - 0.5f;      // V first
+        var v = ReadByte(baseByteIndex) - 0.5f - chromaOffsetV;      // V first
         var y0 = ReadByte(baseByteIndex + 1);
-        var u = ReadByte(baseByteIndex + 2) - 0.5f;  // U second
+        var u = ReadByte(baseByteIndex + 2) - 0.5f - chromaOffsetU;  // U second
         var y1 = ReadByte(baseByteIndex + 3);
 
         var yVal = (x % 2 == 0) ? y0 : y1;

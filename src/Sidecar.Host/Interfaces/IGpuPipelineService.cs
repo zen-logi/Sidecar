@@ -21,11 +21,15 @@ public interface IGpuPipelineService : IDisposable {
     /// <param name="height">画像高さ</param>
     /// <param name="inputFormat">入力フォーマット種別</param>
     /// <param name="enableToneMap">HDRトーンマッピングを適用するか</param>
+    /// <param name="chromaOffsetU">クロマUオフセット (キャプボ補正)</param>
+    /// <param name="chromaOffsetV">クロマVオフセット (キャプボ補正)</param>
     /// <returns>JPEG圧縮されたバイト配列</returns>
     byte[] ProcessFrame(
         ReadOnlySpan<byte> rawBuffer,
         int width,
         int height,
         VideoInputFormat inputFormat,
-        bool enableToneMap);
+        bool enableToneMap,
+        float chromaOffsetU = 0f,
+        float chromaOffsetV = 0f);
 }

@@ -29,6 +29,15 @@ public sealed class FormatInterceptor(ILogger<FormatInterceptor> logger) : IForm
     public bool VerifyRequested { get; set; }
 
     /// <inheritdoc/>
+    public bool CalibrateRequested { get; set; }
+
+    /// <inheritdoc/>
+    public float ChromaOffsetU { get; set; }
+
+    /// <inheritdoc/>
+    public float ChromaOffsetV { get; set; }
+
+    /// <inheritdoc/>
     public VideoInputFormat InputFormat {
         get {
             lock (_lock)
@@ -92,7 +101,13 @@ public sealed class FormatInterceptor(ILogger<FormatInterceptor> logger) : IForm
             // CPU検証フレーム保存
             "verify" => RequestVerify(),
 
-            _ => LogUnknownCommand(command)
+            // クロマオフセット自動計算
+            "calibrate" => RequestCalibrate(),
+
+            // クロマオフセットリセット
+            "offset reset" => ResetChromaOffset(),
+
+            _ => HandleOffsetOrUnknown(normalized)
         };
     }
 
@@ -176,8 +191,46 @@ public sealed class FormatInterceptor(ILogger<FormatInterceptor> logger) : IForm
     /// <returns>常にfalse</returns>
     private bool LogUnknownCommand(string command) {
         logger.LogWarning("不明なコマンド: {Command}", command);
-        logger.LogInformation("利用可能コマンド: mode auto|yuy2|nv12|rgb, hdr on|off, status");
+        logger.LogInformation("利用可能コマンド: mode auto|yuy2|nv12|rgb, hdr on|off, calibrate, offset reset, status");
         return false;
+    }
+
+    /// <summary>
+    /// クロマオフセット自動計算要求
+    /// </summary>
+    private bool RequestCalibrate() {
+        CalibrateRequested = true;
+        logger.LogInformation("次のフレームでクロマオフセットを自動計算します...");
+        return true;
+    }
+
+    /// <summary>
+    /// クロマオフセットをリセット
+    /// </summary>
+    private bool ResetChromaOffset() {
+        ChromaOffsetU = 0f;
+        ChromaOffsetV = 0f;
+        logger.LogInformation("クロマオフセットをリセット (U=0, V=0)");
+        return true;
+    }
+
+    /// <summary>
+    /// offsetコマンドまたは不明コマンドの処理
+    /// </summary>
+    private bool HandleOffsetOrUnknown(string command) {
+        // "offset u <val> v <val>" パターン
+        if (command.StartsWith("offset ")) {
+            var parts = command.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            // offset u <float> v <float>
+            if (parts.Length >= 5 && parts[1] == "u" && parts[3] == "v"
+                && float.TryParse(parts[2], out var uVal) && float.TryParse(parts[4], out var vVal)) {
+                ChromaOffsetU = uVal / 255f;
+                ChromaOffsetV = vVal / 255f;
+                logger.LogInformation("クロマオフセット設定: U={U}, V={V} (0-255スケール)", uVal, vVal);
+                return true;
+            }
+        }
+        return LogUnknownCommand(command);
     }
 
     /// <summary>

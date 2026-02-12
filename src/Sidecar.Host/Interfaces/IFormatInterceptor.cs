@@ -40,6 +40,21 @@ public interface IFormatInterceptor {
     /// 次のフレームをCPU変換してファイル保存するフラグ
     /// </summary>
     bool VerifyRequested { get; set; }
+
+    /// <summary>
+    /// 次のフレームでクロマオフセット自動計算を要求するフラグ
+    /// </summary>
+    bool CalibrateRequested { get; set; }
+
+    /// <summary>
+    /// クロマUオフセット (0.0-1.0スケール, 正値=キャプボが+方向にずれている)
+    /// </summary>
+    float ChromaOffsetU { get; set; }
+
+    /// <summary>
+    /// クロマVオフセット (0.0-1.0スケール, 正値=キャプボが+方向にずれている)
+    /// </summary>
+    float ChromaOffsetV { get; set; }
 }
 
 /// <summary>

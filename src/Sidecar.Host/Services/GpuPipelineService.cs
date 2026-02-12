@@ -42,7 +42,9 @@ public sealed class GpuPipelineService(ILogger<GpuPipelineService> logger) : IGp
         int width,
         int height,
         VideoInputFormat inputFormat,
-        bool enableToneMap) {
+        bool enableToneMap,
+        float chromaOffsetU = 0f,
+        float chromaOffsetV = 0f) {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (_device is null)
@@ -81,7 +83,9 @@ public sealed class GpuPipelineService(ILogger<GpuPipelineService> logger) : IGp
             height,
             formatMode,
             enableToneMap,
-            bytesPerPixel);
+            bytesPerPixel,
+            chromaOffsetU,
+            chromaOffsetV);
         _device.For(width, height, shader);
 
         // GPUからCPUへダウンロード

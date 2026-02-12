@@ -79,7 +79,7 @@ public sealed class CameraService(
                     "フォーマット試行: {Format}, {Width}x{Height} @ {Fps}",
                     candidate.PixelFormat, candidate.Width, candidate.Height, candidate.FramesPerSecond);
 
-                _captureDevice = await targetDescriptor.OpenAsync(candidate, pixelBufferArrived: OnPixelBufferArrived, ct: cancellationToken);
+                _captureDevice = await targetDescriptor.OpenAsync(candidate, pixelBufferArrived: OnPixelBufferArrived, transcodeFormat: TranscodeFormats.DoNotTranscode, ct: cancellationToken);
                 await _captureDevice.StartAsync(cancellationToken);
 
                 // 成功した場合のみ保持
@@ -119,41 +119,29 @@ public sealed class CameraService(
                 var width = _characteristics?.Width ?? 0;
                 var height = _characteristics?.Height ?? 0;
 
+                // BMPヘッダーの検出と除去
+                imageData = StripBmpHeader(imageData, width, height);
+
                 // RAWバイトダンプ (診断用)
                 if (formatInterceptor.DumpRequested) {
                     formatInterceptor.DumpRequested = false;
-                    var stripped = StripBmpHeader(imageData, width, height);
-                    DumpRawBytes(stripped, width, height);
+                    DumpRawBytes(imageData, width, height);
                 }
 
-                // BMP直接保存（DirectShow出力確認用）
-                if (formatInterceptor.VerifyRequested) {
-                    formatInterceptor.VerifyRequested = false;
-                    var outputDir = AppDomain.CurrentDomain.BaseDirectory;
-                    var bmpPath = Path.Combine(outputDir, "verify_direct.bmp");
-                    File.WriteAllBytes(bmpPath, imageData);
-                    Console.WriteLine($"DirectShow BMP直接保存: {bmpPath} ({imageData.Length} bytes)");
-                    Console.WriteLine($"先頭4バイト: {imageData[0]:X2} {imageData[1]:X2} {imageData[2]:X2} {imageData[3]:X2}");
-                    if (imageData.Length > 28) {
-                        var bpp = BitConverter.ToInt16(imageData, 28);
-                        Console.WriteLine($"BMP bitsPerPixel: {bpp}");
-                    }
-                    Console.WriteLine("Windowsで verify_direct.bmp を開いて色を確認してください。");
+                // 自動キャリブレーション (クロマオフセット計算)
+                if (formatInterceptor.CalibrateRequested) {
+                    formatInterceptor.CalibrateRequested = false;
+                    AutoCalibrate(imageData, width, height);
                 }
 
-                // BMPヘッダー検出: FlashCap Auto変換済み→OpenCvSharpで直接デコード
-                if (imageData.Length >= 2 && imageData[0] == 0x42 && imageData[1] == 0x4D) {
-                    // DirectShowがYUV→RGB変換済み。BMPをそのままデコード→JPEG
-                    using var mat = OpenCvSharp.Cv2.ImDecode(imageData, OpenCvSharp.ImreadModes.Color);
-                    _ = OpenCvSharp.Cv2.ImEncode(
-                        ".jpg", mat, out jpegData,
-                        [(int)OpenCvSharp.ImwriteFlags.JpegQuality, Sidecar.Shared.StreamingConstants.JpegQuality]);
-                } else {
-                    // BMPヘッダーなし (DoNotTranscodeフォールバック) → GPU処理パイプライン
-                    var inputFormat = formatInterceptor.InputFormat;
-                    var enableToneMap = formatInterceptor.EnableToneMap;
-                    jpegData = gpuPipeline.ProcessFrame(imageData, width, height, inputFormat, enableToneMap);
-                }
+                // Interceptorから現在のフォーマット設定を取得
+                var inputFormat = formatInterceptor.InputFormat;
+                var enableToneMap = formatInterceptor.EnableToneMap;
+                var chromaOffsetU = formatInterceptor.ChromaOffsetU;
+                var chromaOffsetV = formatInterceptor.ChromaOffsetV;
+
+                // GPU処理実行 (クロマオフセット補正付き)
+                jpegData = gpuPipeline.ProcessFrame(imageData, width, height, inputFormat, enableToneMap, chromaOffsetU, chromaOffsetV);
             }
 
             var frameNumber = Interlocked.Increment(ref _frameNumber);
@@ -178,6 +166,57 @@ public sealed class CameraService(
 
     /// <inheritdoc/>
     public byte[]? GetLatestFrame() => Volatile.Read(ref _latestFrame);
+
+    /// <summary>
+    /// YUY2フレームからクロマオフセットを自動計算 (紫の中華キャプボ対策)
+    /// </summary>
+    private void AutoCalibrate(byte[] yuvData, int width, int height) {
+        // YUY2: [Y0, U, Y1, V] の4バイト単位
+        var expectedSize = width * height * 2;
+        if (yuvData.Length < expectedSize) {
+            Console.WriteLine($"キャリブレーション失敗: データサイズ不足 ({yuvData.Length} < {expectedSize})");
+            return;
+        }
+
+        long sumU = 0, sumV = 0;
+        var count = 0;
+
+        // 画像中央50%の範囲をサンプリング (枠を除外)
+        var yStart = height / 4;
+        var yEnd = height * 3 / 4;
+        var xStart = width / 4;
+        var xEnd = width * 3 / 4;
+
+        for (var row = yStart; row < yEnd; row += 4) {
+            for (var col = xStart; col < xEnd; col += 4) {
+                var offset = (row * width + col) * 2;
+                offset -= offset % 4; // 4バイト境界にアラインメント
+                if (offset + 3 >= yuvData.Length) continue;
+                sumU += yuvData[offset + 1]; // U
+                sumV += yuvData[offset + 3]; // V
+                count++;
+            }
+        }
+
+        if (count == 0) return;
+
+        var avgU = (float)sumU / count;
+        var avgV = (float)sumV / count;
+
+        // 正常なシーンの平均クロマは128付近。ずれ分をオフセットとして設定
+        // 0-255スケール → 0.0-1.0スケールに変換して保存
+        var offsetU = (avgU - 128f) / 255f;
+        var offsetV = (avgV - 128f) / 255f;
+
+        formatInterceptor.ChromaOffsetU = offsetU;
+        formatInterceptor.ChromaOffsetV = offsetV;
+
+        Console.WriteLine($"\n========== キャリブレーション結果 ==========");
+        Console.WriteLine($"サンプル数: {count}");
+        Console.WriteLine($"平均 U={avgU:F1} (正常値:128), V={avgV:F1} (正常値:128)");
+        Console.WriteLine($"クロマオフセット: U={offsetU:F4}, V={offsetV:F4}");
+        Console.WriteLine($"============================================\n");
+    }
 
     /// <summary>
     /// OpenCvSharp CPU変換で全YUV422バリエーションを試して保存
