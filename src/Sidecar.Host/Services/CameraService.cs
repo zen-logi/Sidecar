@@ -79,7 +79,7 @@ public sealed class CameraService(
                     "フォーマット試行: {Format}, {Width}x{Height} @ {Fps}",
                     candidate.PixelFormat, candidate.Width, candidate.Height, candidate.FramesPerSecond);
 
-                _captureDevice = await targetDescriptor.OpenAsync(candidate, pixelBufferArrived: OnPixelBufferArrived, transcodeFormat: TranscodeFormats.DoNotTranscode, ct: cancellationToken);
+                _captureDevice = await targetDescriptor.OpenAsync(candidate, pixelBufferArrived: OnPixelBufferArrived, ct: cancellationToken);
                 await _captureDevice.StartAsync(cancellationToken);
 
                 // 成功した場合のみ保持
@@ -115,32 +115,37 @@ public sealed class CameraService(
             if (_characteristics?.PixelFormat == PixelFormats.JPEG) {
                 jpegData = scope.Buffer.CopyImage();
             } else {
-                // 2. YUY2/NV12/RGBの場合、GPU処理パイプラインで変換
                 var imageData = scope.Buffer.CopyImage();
                 var width = _characteristics?.Width ?? 0;
                 var height = _characteristics?.Height ?? 0;
 
-                // BMPヘッダーの検出と除去
-                imageData = StripBmpHeader(imageData, width, height);
-
                 // RAWバイトダンプ (診断用)
                 if (formatInterceptor.DumpRequested) {
                     formatInterceptor.DumpRequested = false;
-                    DumpRawBytes(imageData, width, height);
+                    var stripped = StripBmpHeader(imageData, width, height);
+                    DumpRawBytes(stripped, width, height);
                 }
 
-                // CPU検証フレーム保存 (OpenCvSharp CvtColorでYUY2→BGR変換)
+                // CPU検証フレーム保存
                 if (formatInterceptor.VerifyRequested) {
                     formatInterceptor.VerifyRequested = false;
-                    SaveVerifyFrames(imageData, width, height);
+                    var stripped = StripBmpHeader(imageData, width, height);
+                    SaveVerifyFrames(stripped, width, height);
                 }
 
-                // Interceptorから現在のフォーマット設定を取得
-                var inputFormat = formatInterceptor.InputFormat;
-                var enableToneMap = formatInterceptor.EnableToneMap;
-
-                // GPU処理実行
-                jpegData = gpuPipeline.ProcessFrame(imageData, width, height, inputFormat, enableToneMap);
+                // BMPヘッダー検出: FlashCap Auto変換済み→OpenCvSharpで直接デコード
+                if (imageData.Length >= 2 && imageData[0] == 0x42 && imageData[1] == 0x4D) {
+                    // DirectShowがYUV→RGB変換済み。BMPをそのままデコード→JPEG
+                    using var mat = OpenCvSharp.Cv2.ImDecode(imageData, OpenCvSharp.ImreadModes.Color);
+                    _ = OpenCvSharp.Cv2.ImEncode(
+                        ".jpg", mat, out jpegData,
+                        [(int)OpenCvSharp.ImwriteFlags.JpegQuality, Sidecar.Shared.StreamingConstants.JpegQuality]);
+                } else {
+                    // BMPヘッダーなし (DoNotTranscodeフォールバック) → GPU処理パイプライン
+                    var inputFormat = formatInterceptor.InputFormat;
+                    var enableToneMap = formatInterceptor.EnableToneMap;
+                    jpegData = gpuPipeline.ProcessFrame(imageData, width, height, inputFormat, enableToneMap);
+                }
             }
 
             var frameNumber = Interlocked.Increment(ref _frameNumber);
