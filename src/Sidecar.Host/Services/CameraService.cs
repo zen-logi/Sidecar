@@ -167,54 +167,66 @@ public sealed class CameraService(
     public byte[]? GetLatestFrame() => Volatile.Read(ref _latestFrame);
 
     /// <summary>
-    /// OpenCvSharp CPU変換で検証フレームを保存
+    /// OpenCvSharp CPU変換で全YUV422バリエーションを試して保存
     /// </summary>
     private void SaveVerifyFrames(byte[] yuvData, int width, int height) {
         try {
             var outputDir = AppDomain.CurrentDomain.BaseDirectory;
 
-            // 1. RAW YUVデータをそのまま保存
+            // RAW YUVデータをそのまま保存
             var rawPath = Path.Combine(outputDir, "verify_raw.bin");
             File.WriteAllBytes(rawPath, yuvData);
             Console.WriteLine($"RAWデータ保存: {rawPath} ({yuvData.Length} bytes)");
 
-            // 2. OpenCvSharp CvtColor で YUY2→BGR 変換 (CPU)
             using var yuvMat = new OpenCvSharp.Mat(height, width, OpenCvSharp.MatType.CV_8UC2);
             System.Runtime.InteropServices.Marshal.Copy(yuvData, 0, yuvMat.Data, Math.Min(yuvData.Length, width * height * 2));
 
-            using var bgrMat = new OpenCvSharp.Mat();
-            OpenCvSharp.Cv2.CvtColor(yuvMat, bgrMat, OpenCvSharp.ColorConversionCodes.YUV2BGR_YUY2);
+            // 全YUV422変換コードを試す
+            var conversions = new (string name, OpenCvSharp.ColorConversionCodes code)[] {
+                ("yuy2_bgr", OpenCvSharp.ColorConversionCodes.YUV2BGR_YUY2),
+                ("uyvy_bgr", OpenCvSharp.ColorConversionCodes.YUV2BGR_UYVY),
+                ("yvyu_bgr", OpenCvSharp.ColorConversionCodes.YUV2BGR_YVYU),
+                ("yuy2_rgb", OpenCvSharp.ColorConversionCodes.YUV2RGB_YUY2),
+                ("uyvy_rgb", OpenCvSharp.ColorConversionCodes.YUV2RGB_UYVY),
+                ("yvyu_rgb", OpenCvSharp.ColorConversionCodes.YUV2RGB_YVYU),
+            };
 
-            var cpuPath = Path.Combine(outputDir, "verify_cpu.jpg");
-            OpenCvSharp.Cv2.ImWrite(cpuPath, bgrMat);
-            Console.WriteLine($"CPU変換JPEG保存: {cpuPath}");
-
-            // 3. 中央ピクセルのBGR値を出力
-            var cx = width / 2;
-            var cy = height / 2;
-            var centerPixel = bgrMat.At<OpenCvSharp.Vec3b>(cy, cx);
-            Console.WriteLine($"中央ピクセル BGR (CPU): B={centerPixel.Item0}, G={centerPixel.Item1}, R={centerPixel.Item2}");
-
-            // 4. 手動YUV→RGB計算 (BT.601) を出力
-            var yuvOffset = (cy * width + cx) * 2;
-            if (yuvOffset + 3 < yuvData.Length) {
-                var yVal = yuvData[yuvOffset];
-                var uVal = yuvData[yuvOffset + 1];
-                var y1Val = yuvData[yuvOffset + 2];
-                var vVal = yuvData[yuvOffset + 3];
-                Console.WriteLine($"中央YUV: Y={yVal} U={uVal} Y1={y1Val} V={vVal}");
-
-                // BT.601 limited range
-                var c = yVal - 16;
-                var d = uVal - 128;
-                var e = vVal - 128;
-                var rr = Math.Clamp((298 * c + 409 * e + 128) >> 8, 0, 255);
-                var gg = Math.Clamp((298 * c - 100 * d - 208 * e + 128) >> 8, 0, 255);
-                var bb = Math.Clamp((298 * c + 516 * d + 128) >> 8, 0, 255);
-                Console.WriteLine($"手動BT.601変換: R={rr}, G={gg}, B={bb}");
+            foreach (var (name, code) in conversions) {
+                try {
+                    using var result = new OpenCvSharp.Mat();
+                    OpenCvSharp.Cv2.CvtColor(yuvMat, result, code);
+                    var path = Path.Combine(outputDir, $"verify_{name}.jpg");
+                    OpenCvSharp.Cv2.ImWrite(path, result);
+                    Console.WriteLine($"保存: {path}");
+                } catch (Exception ex) {
+                    Console.WriteLine($"変換失敗 ({name}): {ex.Message}");
+                }
             }
 
-            Console.WriteLine("検証ファイル保存完了！");
+            // U/V スワップテスト: データのU,Vバイトを入れ替えてからYUY2変換
+            var swapped = new byte[yuvData.Length];
+            Array.Copy(yuvData, swapped, yuvData.Length);
+            for (var i = 0; i < swapped.Length - 3; i += 4) {
+                // YUY2: [Y0, U, Y1, V] → [Y0, V, Y1, U] (U↔V swap)
+                (swapped[i + 1], swapped[i + 3]) = (swapped[i + 3], swapped[i + 1]);
+            }
+            using var swapMat = new OpenCvSharp.Mat(height, width, OpenCvSharp.MatType.CV_8UC2);
+            System.Runtime.InteropServices.Marshal.Copy(swapped, 0, swapMat.Data, swapped.Length);
+            using var swapResult = new OpenCvSharp.Mat();
+            OpenCvSharp.Cv2.CvtColor(swapMat, swapResult, OpenCvSharp.ColorConversionCodes.YUV2BGR_YUY2);
+            var swapPath = Path.Combine(outputDir, "verify_uv_swap.jpg");
+            OpenCvSharp.Cv2.ImWrite(swapPath, swapResult);
+            Console.WriteLine($"保存 (U/Vスワップ): {swapPath}");
+
+            // 中央ピクセル値を出力
+            var offset = (height / 2 * width + width / 2) * 2;
+            if (offset + 3 < yuvData.Length) {
+                Console.WriteLine($"\n中央バイト: [{yuvData[offset]:X2} {yuvData[offset+1]:X2} {yuvData[offset+2]:X2} {yuvData[offset+3]:X2}]");
+                Console.WriteLine($"  YUY2解釈: Y0={yuvData[offset]} U={yuvData[offset+1]} Y1={yuvData[offset+2]} V={yuvData[offset+3]}");
+                Console.WriteLine($"  UYVY解釈: U={yuvData[offset]} Y0={yuvData[offset+1]} V={yuvData[offset+2]} Y1={yuvData[offset+3]}");
+            }
+
+            Console.WriteLine("\n全検証ファイル保存完了！正しい色のファイル名を教えてください。");
         } catch (Exception ex) {
             Console.WriteLine($"検証フレーム保存エラー: {ex.Message}");
         }
