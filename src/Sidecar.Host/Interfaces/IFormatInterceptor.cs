@@ -30,6 +30,11 @@ public interface IFormatInterceptor {
     /// <param name="command">コマンド文字列 (例: "mode yuy2", "hdr on")</param>
     /// <returns>コマンドが正常に処理された場合true</returns>
     bool ProcessCommand(string command);
+
+    /// <summary>
+    /// 次のフレームのRAWバイトダンプを要求するフラグ
+    /// </summary>
+    bool DumpRequested { get; set; }
 }
 
 /// <summary>

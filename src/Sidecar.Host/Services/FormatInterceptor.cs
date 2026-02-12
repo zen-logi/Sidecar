@@ -21,6 +21,9 @@ public sealed class FormatInterceptor(ILogger<FormatInterceptor> logger) : IForm
     private VideoInputFormat? _overrideFormat;
 
     /// <inheritdoc/>
+    public bool DumpRequested { get; set; }
+
+    /// <inheritdoc/>
     public VideoInputFormat InputFormat {
         get {
             lock (_lock)
@@ -78,6 +81,9 @@ public sealed class FormatInterceptor(ILogger<FormatInterceptor> logger) : IForm
             // ステータス表示
             "status" => ShowStatus(),
 
+            // RAWバイトダンプ
+            "dump" => RequestDump(),
+
             _ => LogUnknownCommand(command)
         };
     }
@@ -132,6 +138,16 @@ public sealed class FormatInterceptor(ILogger<FormatInterceptor> logger) : IForm
                 overrideLabel,
                 _enableToneMap ? "有効" : "無効");
         }
+        return true;
+    }
+
+    /// <summary>
+    /// RAWバイトダンプ要求をセット
+    /// </summary>
+    /// <returns>常にtrue</returns>
+    private bool RequestDump() {
+        DumpRequested = true;
+        logger.LogInformation("次のフレームでRAWバイトダンプを実行します...");
         return true;
     }
 

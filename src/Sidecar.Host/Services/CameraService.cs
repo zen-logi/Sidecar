@@ -120,6 +120,12 @@ public sealed class CameraService(
                 var width = _characteristics?.Width ?? 0;
                 var height = _characteristics?.Height ?? 0;
 
+                // RAWバイトダンプ (診断用)
+                if (formatInterceptor.DumpRequested) {
+                    formatInterceptor.DumpRequested = false;
+                    DumpRawBytes(imageData, width, height);
+                }
+
                 // Interceptorから現在のフォーマット設定を取得
                 var inputFormat = formatInterceptor.InputFormat;
                 var enableToneMap = formatInterceptor.EnableToneMap;
@@ -150,6 +156,46 @@ public sealed class CameraService(
 
     /// <inheritdoc/>
     public byte[]? GetLatestFrame() => Volatile.Read(ref _latestFrame);
+
+    /// <summary>
+    /// RAWバッファの診断情報をコンソールに出力
+    /// </summary>
+    /// <param name="data">RAWバイトデータ</param>
+    /// <param name="width">フレーム幅</param>
+    /// <param name="height">フレーム高さ</param>
+    private void DumpRawBytes(byte[] data, int width, int height) {
+        Console.WriteLine("\n========== RAW FRAME DUMP ==========");
+        Console.WriteLine($"バッファサイズ: {data.Length} bytes");
+        Console.WriteLine($"解像度: {width}x{height}");
+        Console.WriteLine($"期待サイズ (YUYV 2bpp): {width * height * 2}");
+        Console.WriteLine($"期待サイズ (NV12 1.5bpp): {width * height * 3 / 2}");
+        Console.WriteLine($"期待サイズ (RGB24 3bpp): {width * height * 3}");
+        Console.WriteLine($"期待サイズ (BGRA 4bpp): {width * height * 4}");
+        Console.WriteLine($"実際のbpp: {(double)data.Length / (width * height):F2}");
+
+        // 先頭64バイト
+        var hexLen = Math.Min(64, data.Length);
+        Console.Write("先頭64バイト: ");
+        for (var i = 0; i < hexLen; i++) {
+            Console.Write($"{data[i]:X2} ");
+            if ((i + 1) % 16 == 0) Console.Write("\n               ");
+        }
+        Console.WriteLine();
+
+        // 中央付近の8バイト (YUY2想定: 4ピクセル分)
+        var centerByte = (height / 2 * width + width / 2) * 2; // YUYV stride
+        if (centerByte + 8 <= data.Length) {
+            Console.Write($"中央ピクセル付近 (offset {centerByte}): ");
+            for (var i = 0; i < 8; i++) {
+                Console.Write($"{data[centerByte + i]:X2} ");
+            }
+            Console.WriteLine();
+            Console.WriteLine($"  YUY2解釈: Y0={data[centerByte]}, U={data[centerByte + 1]}, Y1={data[centerByte + 2]}, V={data[centerByte + 3]}");
+            Console.WriteLine($"  UYVY解釈: U={data[centerByte]}, Y0={data[centerByte + 1]}, V={data[centerByte + 2]}, Y1={data[centerByte + 3]}");
+        }
+
+        Console.WriteLine("====================================\n");
+    }
 
     /// <inheritdoc/>
     public void Dispose() {
