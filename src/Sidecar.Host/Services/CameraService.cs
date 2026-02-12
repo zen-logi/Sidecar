@@ -175,30 +175,12 @@ public sealed class CameraService(
         // ピクセルデータオフセットを読み取り (バイト10-13, リトルエンディアン)
         var pixelOffset = BitConverter.ToInt32(data, 10);
 
-        // biHeight を読み取り (バイト22-25, リトルエンディアン) — 正の場合ボトムアップ
-        var biHeight = BitConverter.ToInt32(data, 22);
-        var isBottomUp = biHeight > 0;
-        var absHeight = Math.Abs(biHeight);
-
-        // ピクセルデータを抽出
+        // ピクセルデータのみ抽出 (DirectShowは通常トップダウン順で配信)
         var pixelDataLength = data.Length - pixelOffset;
         var pixelData = new byte[pixelDataLength];
+        Buffer.BlockCopy(data, pixelOffset, pixelData, 0, pixelDataLength);
 
-        if (isBottomUp) {
-            // ボトムアップ → トップダウンに行を反転
-            var stride = pixelDataLength / absHeight;
-            for (var row = 0; row < absHeight; row++) {
-                var srcOffset = pixelOffset + ((absHeight - 1 - row) * stride);
-                var dstOffset = row * stride;
-                Buffer.BlockCopy(data, srcOffset, pixelData, dstOffset, stride);
-            }
-            logger.LogDebug("BMPヘッダー除去 + ボトムアップ反転 (offset={Offset}, stride={Stride})", pixelOffset, stride);
-        } else {
-            // トップダウン → そのままコピー
-            Buffer.BlockCopy(data, pixelOffset, pixelData, 0, pixelDataLength);
-            logger.LogDebug("BMPヘッダー除去 (offset={Offset})", pixelOffset);
-        }
-
+        logger.LogDebug("BMPヘッダー除去 (offset={Offset}, pixelSize={Size})", pixelOffset, pixelDataLength);
         return pixelData;
     }
 
