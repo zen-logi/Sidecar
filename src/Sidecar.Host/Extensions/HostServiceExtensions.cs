@@ -13,16 +13,36 @@ namespace Sidecar.Host.Extensions;
 /// </summary>
 public static class HostServiceExtensions {
     /// <summary>
-    /// Sidecar.Hostのサービスをサービスコレクションに追加
+    /// カメラモード用のSidecar.Hostサービスをサービスコレクションに追加
     /// </summary>
     /// <param name="services">サービスコレクション</param>
     /// <returns>サービスコレクション</returns>
-    public static IServiceCollection AddSidecarHostServices(this IServiceCollection services) {
-        // Video services
+    public static IServiceCollection AddSidecarCameraMode(this IServiceCollection services) {
+        // Video services (カメラモード)
         _ = services.AddSingleton<ICameraService, CameraService>();
+        _ = services.AddSingleton<IFrameSource, CameraFrameSource>();
         _ = services.AddSingleton<IStreamServer, StreamServer>();
 
         // Audio services
+        _ = services.AddSingleton<IAudioService, AudioService>();
+        _ = services.AddSingleton<IAudioStreamServer, AudioStreamServer>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// リレーモード用のSidecar.Hostサービスをサービスコレクションに追加
+    /// </summary>
+    /// <param name="services">サービスコレクション</param>
+    /// <returns>サービスコレクション</returns>
+    public static IServiceCollection AddSidecarRelayMode(this IServiceCollection services) {
+        // Video services (リレーモード)
+        _ = services.AddSingleton<RelayReceiverService>();
+        _ = services.AddSingleton<IRelayReceiverService>(sp => sp.GetRequiredService<RelayReceiverService>());
+        _ = services.AddSingleton<IFrameSource>(sp => sp.GetRequiredService<RelayReceiverService>());
+        _ = services.AddSingleton<IStreamServer, StreamServer>();
+
+        // Audio services (リレーモードでもローカル音声は利用可能)
         _ = services.AddSingleton<IAudioService, AudioService>();
         _ = services.AddSingleton<IAudioStreamServer, AudioStreamServer>();
 

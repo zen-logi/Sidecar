@@ -1,0 +1,138 @@
+import { app, BrowserWindow, ipcMain, desktopCapturer } from 'electron';
+import * as path from 'path';
+import { TcpSender } from './tcp-sender';
+
+/** 開発モード判定（app.isPackagedはパッケージ化されていない場合false） */
+const isDev = !app.isPackaged;
+
+/** メインウィンドウの参照 */
+let mainWindow: BrowserWindow | null = null;
+
+/** TCP送信クライアント */
+const tcpSender = new TcpSender();
+
+/** キャプチャタイマーID */
+let captureInterval: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * メインウィンドウを作成
+ */
+function createWindow(): void {
+    mainWindow = new BrowserWindow({
+        width: 900,
+        height: 700,
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+        },
+        title: 'Sidecar MultiSender',
+    });
+
+    // 開発時はNext.js dev serverに接続、本番時はビルド済みHTMLをロード
+    if (isDev) {
+        // Next.js dev serverの起動を待ってからロード
+        const devUrl = 'http://localhost:3000';
+        const loadDevUrl = async (retries = 30): Promise<void> => {
+            try {
+                await mainWindow!.loadURL(devUrl);
+            } catch {
+                if (retries > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await loadDevUrl(retries - 1);
+                } else {
+                    console.error('Next.js dev server に接続できません。先に npm run dev を実行してください。');
+                }
+            }
+        };
+        loadDevUrl();
+    } else {
+        // next build && next export で生成された静的ファイルを読み込む
+        const indexPath = path.join(app.getAppPath(), 'out', 'index.html');
+        mainWindow.loadFile(indexPath);
+    }
+
+    mainWindow.on('closed', () => {
+        mainWindow = null;
+    });
+}
+
+/**
+ * 利用可能な画面/ウィンドウソースを列挙
+ */
+async function getDesktopSources(): Promise<Array<{ id: string; name: string; thumbnailDataUrl: string }>> {
+    const sources = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        thumbnailSize: { width: 320, height: 180 },
+    });
+
+    return sources.map(source => ({
+        id: source.id,
+        name: source.name,
+        thumbnailDataUrl: source.thumbnail.toDataURL(),
+    }));
+}
+
+// ==================== IPC ハンドラー ====================
+
+/** ソース一覧を取得 */
+ipcMain.handle('sources:list', async () => {
+    return getDesktopSources();
+});
+
+/** TCP接続を開始 */
+ipcMain.handle('connection:connect', async (_event, host: string, port: number) => {
+    try {
+        await tcpSender.connect(host, port);
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: (error as Error).message };
+    }
+});
+
+/** TCP接続を切断 */
+ipcMain.handle('connection:disconnect', async () => {
+    tcpSender.disconnect();
+    if (captureInterval) {
+        clearInterval(captureInterval);
+        captureInterval = null;
+    }
+    return { success: true };
+});
+
+/** 接続状態を取得 */
+ipcMain.handle('connection:status', async () => {
+    return {
+        connected: tcpSender.isConnected,
+        framesSent: tcpSender.framesSent,
+    };
+});
+
+/** JPEGフレームを送信（Rendererから呼び出し） */
+ipcMain.on('frame:send', (_event, jpegBuffer: Buffer) => {
+    if (tcpSender.isConnected) {
+        tcpSender.sendFrame(jpegBuffer);
+    }
+});
+
+// ==================== アプリケーションライフサイクル ====================
+
+app.whenReady().then(() => {
+    createWindow();
+
+    app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+            createWindow();
+        }
+    });
+});
+
+app.on('window-all-closed', () => {
+    tcpSender.disconnect();
+    if (captureInterval) {
+        clearInterval(captureInterval);
+    }
+    if (process.platform !== 'darwin') {
+        app.quit();
+    }
+});

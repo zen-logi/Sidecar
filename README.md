@@ -48,15 +48,26 @@ Sidecar/
 
 [Releases ページ](https://github.com/zen-logi/Sidecar/releases) から最新のビルドをダウンロードできます。
 
-| ファイル | 説明 |
-|----------|------|
-| `Sidecar.Client-Setup.exe` | Client インストーラー（視聴側） |
-| `Sidecar.Host-win-x64.zip` | Host 単体（配信側） |
-
-**Client**: インストーラーをダブルクリックで実行
-**Host**: ZIPを解凍して `Sidecar.Host.exe` を実行
+| コンポーネント | ファイル | 説明 |
+|--------------|----------|------|
+| **Host** (配信) | `Sidecar.Host-win-x64.zip` | Windows用ホストアプリ |
+| **Client** (視聴) | `Sidecar.Client-Setup.exe` | Windows用クライアント |
+| **Sender** (送信) | `Sidecar MultiSender Setup.exe` | Windows用リレー送信アプリ |
+| **Sender** (送信) | `Sidecar MultiSender.dmg` | macOS用リレー送信アプリ |
 
 ## セットアップ手順
+
+### 1. ホスト (Windows)
+ZIPを解凍して `Sidecar.Host.exe` を実行します。
+
+### 2. リレー送信 (Mac/Windows)
+Sidecar MultiSender をインストールして起動します。
+1. ソース画面を選択
+2. ホストPCのIPアドレスを入力
+3. **接続** ボタンをクリック
+
+### 3. クライアント (視聴)
+`Sidecar.Client` またはブラウザでホストに接続します。
 
 ### ソースからビルドする場合
 

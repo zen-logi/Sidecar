@@ -13,6 +13,14 @@ Console.WriteLine(" Sidecar Host - Video & Audio Streamer");
 Console.WriteLine("=================================");
 Console.WriteLine();
 
+// ==================== モード選択 ====================
+Console.WriteLine("入力ソースを選択:");
+Console.WriteLine("  [1] カメラ (ローカル)");
+Console.WriteLine("  [2] リレー (Macからのリモート受信)");
+Console.Write("\nモードを入力: ");
+var modeInput = Console.ReadLine();
+var isRelayMode = modeInput?.Trim() == "2";
+
 // DIコンテナのセットアップ
 var services = new ServiceCollection();
 
@@ -22,11 +30,15 @@ services.AddLogging(builder => {
     _ = builder.AddConsole(options => options.FormatterName = "simple");
 });
 
-services.AddSidecarHostServices();
+if (isRelayMode) {
+    services.AddSidecarRelayMode();
+} else {
+    services.AddSidecarCameraMode();
+}
+
 await using var serviceProvider = services.BuildServiceProvider();
 
 var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
-var cameraService = serviceProvider.GetRequiredService<ICameraService>();
 var streamServer = serviceProvider.GetRequiredService<IStreamServer>();
 var audioService = serviceProvider.GetRequiredService<IAudioService>();
 var audioStreamServer = serviceProvider.GetRequiredService<IAudioStreamServer>();
@@ -41,93 +53,120 @@ Console.CancelKeyPress += (_, e) => {
 };
 
 try {
-    // ==================== カメラ選択 ====================
-    logger.LogInformation("利用可能なカメラデバイスを検索中");
-    var cameras = cameraService.GetAvailableDevices();
-
-    if (cameras.Count == 0) {
-        logger.LogError("利用可能なカメラデバイスが見つからない");
-        return 1;
-    }
-
-    foreach (var camera in cameras) {
-        Console.WriteLine($"  [{camera.Index}] {camera.Name}");
-    }
-
-    int selectedCameraIndex;
-    if (args.Length > 0 && int.TryParse(args[0], out var argIndex)) {
-        selectedCameraIndex = argIndex;
-        logger.LogInformation("コマンドライン引数からカメラ {Index} を選択", selectedCameraIndex);
-    } else {
-        Console.Write("\n使用するカメラのインデックスを入力: ");
-        var input = Console.ReadLine();
-
-        if (!int.TryParse(input, out selectedCameraIndex)) {
-            logger.LogError("無効な入力");
-            return 1;
-        }
-    }
-
-    if (selectedCameraIndex < 0 || selectedCameraIndex >= cameras.Count) {
-        logger.LogError("カメラインデックス {Index} は存在しない", selectedCameraIndex);
-        return 1;
-    }
-
-    // ==================== 音声デバイス選択 ====================
-    logger.LogInformation("利用可能な音声デバイスを検索中");
-    var audioDevices = audioService.GetAvailableDevices();
-
-    string? selectedAudioDeviceId = null;
-    if (audioDevices.Count > 0) {
-        for (var i = 0; i < audioDevices.Count; i++) {
-            Console.WriteLine($"  [{i}] {audioDevices[i].Name}");
-        }
-
-        Console.Write("\n使用する音声デバイスのインデックスを入力 (スキップ: Enter): ");
-        var audioInput = Console.ReadLine();
-
-        if (!string.IsNullOrWhiteSpace(audioInput) && int.TryParse(audioInput, out var audioIndex)) {
-            if (audioIndex >= 0 && audioIndex < audioDevices.Count) {
-                selectedAudioDeviceId = audioDevices[audioIndex].Id;
-            }
-        }
-    } else {
-        logger.LogWarning("利用可能な音声デバイスが見つからない 音声ストリーミングは無効");
-    }
-
     // ==================== ポート番号の取得 ====================
     var videoPort = StreamingConstants.DefaultPort;
     var audioPort = StreamingConstants.DefaultAudioPort;
+    var relayPort = StreamingConstants.DefaultRelayPort;
 
     if (args.Length > 1 && int.TryParse(args[1], out var argPort)) {
         videoPort = argPort;
         audioPort = argPort + 1;
     }
 
-    // ==================== キャプチャ開始 ====================
-    await cameraService.StartCaptureAsync(selectedCameraIndex, cts.Token);
-    await streamServer.StartAsync(videoPort, cts.Token);
+    if (isRelayMode) {
+        // ==================== リレーモード ====================
+        var relayService = serviceProvider.GetRequiredService<IRelayReceiverService>();
 
-    if (selectedAudioDeviceId is not null) {
-        await audioService.StartCaptureAsync(selectedAudioDeviceId, cts.Token);
-        await audioStreamServer.StartAsync(audioPort, cts.Token);
-    }
+        await relayService.StartAsync(relayPort, cts.Token);
+        await streamServer.StartAsync(videoPort, cts.Token);
 
-    Console.WriteLine($"\n===== ストリーミング開始 =====");
-    Console.WriteLine($"ビデオ: http://<このPCのIPアドレス>:{videoPort}");
-    if (selectedAudioDeviceId is not null) {
-        Console.WriteLine($"オーディオ: tcp://<このPCのIPアドレス>:{audioPort}");
-    }
-    Console.WriteLine("Ctrl+C で終了\n");
+        Console.WriteLine($"\n===== リレーモードでストリーミング開始 =====");
+        Console.WriteLine($"リレー受信: tcp://0.0.0.0:{relayPort} (Mac Senderからの接続を待機)");
+        Console.WriteLine($"ビデオ配信: http://<このPCのIPアドレス>:{videoPort}");
+        Console.WriteLine("Ctrl+C で終了\n");
 
-    // メインループ
-    while (!cts.Token.IsCancellationRequested) {
-        var audioClientCount = selectedAudioDeviceId is not null ? audioStreamServer.ConnectedClientCount : 0;
-        Console.Write($"\r接続クライアント数 - ビデオ: {streamServer.ConnectedClientCount}, オーディオ: {audioClientCount}   ");
-        try {
-            await Task.Delay(1000, cts.Token);
-        } catch (OperationCanceledException) {
-            break;
+        // メインループ
+        while (!cts.Token.IsCancellationRequested) {
+            var senderStatus = relayService.IsSenderConnected ? "接続中" : "待機中 (NO SIGNAL)";
+            Console.Write($"\rSender: {senderStatus} | 配信クライアント数: {streamServer.ConnectedClientCount}   ");
+            try {
+                await Task.Delay(1000, cts.Token);
+            } catch (OperationCanceledException) {
+                break;
+            }
+        }
+    } else {
+        // ==================== カメラモード ====================
+        var cameraService = serviceProvider.GetRequiredService<ICameraService>();
+
+        logger.LogInformation("利用可能なカメラデバイスを検索中");
+        var cameras = cameraService.GetAvailableDevices();
+
+        if (cameras.Count == 0) {
+            logger.LogError("利用可能なカメラデバイスが見つからない");
+            return 1;
+        }
+
+        foreach (var camera in cameras) {
+            Console.WriteLine($"  [{camera.Index}] {camera.Name}");
+        }
+
+        int selectedCameraIndex;
+        if (args.Length > 0 && int.TryParse(args[0], out var argIndex)) {
+            selectedCameraIndex = argIndex;
+            logger.LogInformation("コマンドライン引数からカメラ {Index} を選択", selectedCameraIndex);
+        } else {
+            Console.Write("\n使用するカメラのインデックスを入力: ");
+            var input = Console.ReadLine();
+
+            if (!int.TryParse(input, out selectedCameraIndex)) {
+                logger.LogError("無効な入力");
+                return 1;
+            }
+        }
+
+        if (selectedCameraIndex < 0 || selectedCameraIndex >= cameras.Count) {
+            logger.LogError("カメラインデックス {Index} は存在しない", selectedCameraIndex);
+            return 1;
+        }
+
+        // ==================== 音声デバイス選択 ====================
+        logger.LogInformation("利用可能な音声デバイスを検索中");
+        var audioDevices = audioService.GetAvailableDevices();
+
+        string? selectedAudioDeviceId = null;
+        if (audioDevices.Count > 0) {
+            for (var i = 0; i < audioDevices.Count; i++) {
+                Console.WriteLine($"  [{i}] {audioDevices[i].Name}");
+            }
+
+            Console.Write("\n使用する音声デバイスのインデックスを入力 (スキップ: Enter): ");
+            var audioInput = Console.ReadLine();
+
+            if (!string.IsNullOrWhiteSpace(audioInput) && int.TryParse(audioInput, out var audioIndex)) {
+                if (audioIndex >= 0 && audioIndex < audioDevices.Count) {
+                    selectedAudioDeviceId = audioDevices[audioIndex].Id;
+                }
+            }
+        } else {
+            logger.LogWarning("利用可能な音声デバイスが見つからない 音声ストリーミングは無効");
+        }
+
+        // ==================== キャプチャ開始 ====================
+        await cameraService.StartCaptureAsync(selectedCameraIndex, cts.Token);
+        await streamServer.StartAsync(videoPort, cts.Token);
+
+        if (selectedAudioDeviceId is not null) {
+            await audioService.StartCaptureAsync(selectedAudioDeviceId, cts.Token);
+            await audioStreamServer.StartAsync(audioPort, cts.Token);
+        }
+
+        Console.WriteLine($"\n===== ストリーミング開始 =====");
+        Console.WriteLine($"ビデオ: http://<このPCのIPアドレス>:{videoPort}");
+        if (selectedAudioDeviceId is not null) {
+            Console.WriteLine($"オーディオ: tcp://<このPCのIPアドレス>:{audioPort}");
+        }
+        Console.WriteLine("Ctrl+C で終了\n");
+
+        // メインループ
+        while (!cts.Token.IsCancellationRequested) {
+            var audioClientCount = selectedAudioDeviceId is not null ? audioStreamServer.ConnectedClientCount : 0;
+            Console.Write($"\r接続クライアント数 - ビデオ: {streamServer.ConnectedClientCount}, オーディオ: {audioClientCount}   ");
+            try {
+                await Task.Delay(1000, cts.Token);
+            } catch (OperationCanceledException) {
+                break;
+            }
         }
     }
 } catch (OperationCanceledException) {
@@ -153,7 +192,14 @@ try {
     await StopService("音声ストリーミング", audioStreamServer.StopAsync);
     await StopService("音声キャプチャ", audioService.StopCaptureAsync);
     await StopService("ビデオストリーミング", streamServer.StopAsync);
-    await StopService("カメラキャプチャ", cameraService.StopCaptureAsync);
+
+    if (isRelayMode) {
+        var relayService = serviceProvider.GetRequiredService<IRelayReceiverService>();
+        await StopService("リレー受信", relayService.StopAsync);
+    } else {
+        var cameraService = serviceProvider.GetRequiredService<ICameraService>();
+        await StopService("カメラキャプチャ", cameraService.StopCaptureAsync);
+    }
 
     Console.WriteLine("終了");
 }

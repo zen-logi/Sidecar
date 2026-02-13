@@ -82,4 +82,15 @@ public static class StreamingConstants
     /// 音声受信バッファサイズ（バイト）
     /// </summary>
     public const int AudioReceiveBufferSize = 64 * 1024; // 64KB
+
+    // ==================== Relay Streaming ====================
+
+    /// <summary>リレー受信用デフォルトポート番号</summary>
+    public const int DefaultRelayPort = 9000;
+
+    /// <summary>リレー受信時の最大JPEGペイロードサイズ (10MB)</summary>
+    public const int MaxRelayPayloadSize = 10 * 1024 * 1024;
+
+    /// <summary>Relay接続切断時のNo Signal発行間隔（ミリ秒）</summary>
+    public const int NoSignalIntervalMs = 1000;
 }
