@@ -28,6 +28,7 @@ export default function Home() {
     const captureIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const fpsCounterRef = useRef(0);
+    const sendingRef = useRef(false);
 
     /**
      * 画面/ウィンドウソース一覧をリフレッシュ
@@ -86,7 +87,7 @@ export default function Home() {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: sourceId,
-                        maxFrameRate: 30,
+                        maxFrameRate: 20,
                     },
                 },
             });
@@ -100,10 +101,11 @@ export default function Home() {
 
             setCapturing(true);
 
-            // キャプチャループ開始（30fps）
+            // バックプレッシャー付きキャプチャループ開始
+            sendingRef.current = false;
             captureIntervalRef.current = setInterval(() => {
                 captureAndSendFrame();
-            }, 33);
+            }, 50); // 20fps
         } catch (err) {
             console.error('Capture error:', err);
             setError('画面キャプチャの開始に失敗しました');
@@ -119,7 +121,7 @@ export default function Home() {
             captureIntervalRef.current = null;
         }
         if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop());
             streamRef.current = null;
         }
         if (videoRef.current) {
@@ -130,33 +132,53 @@ export default function Home() {
 
     /**
      * 1フレームをキャプチャしてJPEGに変換、メインプロセスへ送信
+     * バックプレッシャー: 前フレーム処理中はスキップ
      */
     const captureAndSendFrame = useCallback(() => {
+        // バックプレッシャー: 前回送信が完了していなければスキップ
+        if (sendingRef.current) return;
+
         const video = videoRef.current;
         const canvas = canvasRef.current;
         if (!video || !canvas || !window.electronAPI) return;
+        if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) return;
 
-        // Canvas サイズをビデオに合わせる
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        // 解像度スケーリング（最大幅1280px）
+        const maxWidth = 1280;
+        const scale = video.videoWidth > maxWidth ? maxWidth / video.videoWidth : 1;
+        const width = Math.round(video.videoWidth * scale);
+        const height = Math.round(video.videoHeight * scale);
+
+        // Canvasサイズの変更は必要時のみ（再割り当てを避ける）
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+        }
 
         // ビデオフレームをCanvasに描画
-        ctx.drawImage(video, 0, 0);
+        ctx.drawImage(video, 0, 0, width, height);
+
+        // バックプレッシャーフラグをセット
+        sendingRef.current = true;
 
         // CanvasからJPEGに変換
         canvas.toBlob(
-            (blob) => {
-                if (!blob) return;
-                blob.arrayBuffer().then((buffer) => {
+            (blob: Blob | null) => {
+                if (!blob) {
+                    sendingRef.current = false;
+                    return;
+                }
+                blob.arrayBuffer().then((buffer: ArrayBuffer) => {
                     window.electronAPI.sendFrame(new Uint8Array(buffer));
                     fpsCounterRef.current++;
+                    sendingRef.current = false;
                 });
             },
             'image/jpeg',
-            0.75 // JPEG品質 75%
+            0.65 // JPEG品質 65%（転送速度優先）
         );
     }, []);
 

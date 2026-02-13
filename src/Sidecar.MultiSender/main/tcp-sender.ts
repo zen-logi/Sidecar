@@ -67,6 +67,7 @@ export class TcpSender {
 
     /**
      * Length-Prefixedフォーマットでフレームを送信
+     * ヘッダーとペイロードを結合して1回のwriteで送信（フラグメンテーション回避）
      * @param jpegBuffer JPEG画像データ
      */
     sendFrame(jpegBuffer: Buffer): void {
@@ -75,14 +76,12 @@ export class TcpSender {
         }
 
         try {
-            // ヘッダー: 4バイト Big Endian でペイロードサイズを書き込み
-            const header = Buffer.alloc(4);
-            header.writeUInt32BE(jpegBuffer.length, 0);
+            // ヘッダー(4バイト) + ペイロードを1つのバッファに結合
+            const packet = Buffer.alloc(4 + jpegBuffer.length);
+            packet.writeUInt32BE(jpegBuffer.length, 0);
+            jpegBuffer.copy(packet, 4);
 
-            // ヘッダー + ペイロードを送信
-            this._socket.write(header);
-            this._socket.write(jpegBuffer);
-
+            this._socket.write(packet);
             this._framesSent++;
         } catch (err) {
             console.error('Send error:', (err as Error).message);
