@@ -68,9 +68,9 @@ export class TcpSender {
     /**
      * Length-Prefixedフォーマットでフレームを送信
      * ヘッダーとペイロードを結合して1回のwriteで送信（フラグメンテーション回避）
-     * @param jpegBuffer JPEG画像データ
+     * @param jpegBuffer JPEG画像データ（Uint8ArrayまたはBuffer）
      */
-    sendFrame(jpegBuffer: Buffer): void {
+    sendFrame(jpegBuffer: Buffer | Uint8Array): void {
         if (!this._connected || !this._socket) {
             return;
         }
@@ -79,7 +79,7 @@ export class TcpSender {
             // ヘッダー(4バイト) + ペイロードを1つのバッファに結合
             const packet = Buffer.alloc(4 + jpegBuffer.length);
             packet.writeUInt32BE(jpegBuffer.length, 0);
-            jpegBuffer.copy(packet, 4);
+            packet.set(jpegBuffer, 4);
 
             this._socket.write(packet);
             this._framesSent++;
