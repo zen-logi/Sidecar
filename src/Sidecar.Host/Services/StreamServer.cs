@@ -20,9 +20,9 @@ namespace Sidecar.Host.Services;
 /// <remarks>
 /// <see cref="StreamServer"/> クラスの新しいインスタンスを初期化
 /// </remarks>
-/// <param name="cameraService">カメラサービス</param>
+/// <param name="frameSource">フレームソース</param>
 /// <param name="logger">ロガー</param>
-public sealed class StreamServer(ICameraService cameraService, ILogger<StreamServer> logger) : IStreamServer {
+public sealed class StreamServer(IFrameSource frameSource, ILogger<StreamServer> logger) : IStreamServer {
     private readonly ConcurrentDictionary<Guid, TcpClient> _clients = new();
 
     private TcpListener? _listener;
@@ -56,7 +56,7 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
         _serverTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         // フレーム受信イベントを購読
-        cameraService.FrameAvailable += OnFrameAvailable;
+        frameSource.FrameAvailable += OnFrameAvailable;
 
         _broadcastTask = ProcessBroadcastQueueAsync(_serverTokenSource.Token);
         _acceptTask = AcceptClientsAsync(_serverTokenSource.Token);
@@ -68,7 +68,7 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
 
     /// <inheritdoc />
     public async Task StopAsync(CancellationToken cancellationToken = default) {
-        cameraService.FrameAvailable -= OnFrameAvailable;
+        frameSource.FrameAvailable -= OnFrameAvailable;
 
         if (_serverTokenSource is not null) {
             await _serverTokenSource.CancelAsync();
@@ -225,7 +225,7 @@ public sealed class StreamServer(ICameraService cameraService, ILogger<StreamSer
         }
 
         // 同期的に停止
-        cameraService.FrameAvailable -= OnFrameAvailable;
+        frameSource.FrameAvailable -= OnFrameAvailable;
         _serverTokenSource?.Cancel();
         _ = (_acceptTask?.Wait(TimeSpan.FromSeconds(2)));
 
