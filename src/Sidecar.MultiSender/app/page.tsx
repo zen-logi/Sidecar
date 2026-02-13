@@ -236,9 +236,7 @@ export default function Home() {
                 <section className="preview-section">
                     <div className="preview-header">プレビュー</div>
                     <div className="preview-area">
-                        {capturing ? (
-                            <video ref={videoRef} muted playsInline />
-                        ) : (
+                        {!capturing && (
                             <div className="preview-placeholder">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                                     <rect x="2" y="3" width="20" height="14" rx="2" />
@@ -247,7 +245,12 @@ export default function Home() {
                                 <span>ソースを選択してください</span>
                             </div>
                         )}
-                        <video ref={videoRef} muted playsInline style={{ display: capturing ? 'block' : 'none' }} />
+                        <video
+                            ref={videoRef}
+                            muted
+                            playsInline
+                            style={{ display: capturing ? 'block' : 'none' }}
+                        />
                     </div>
                     <canvas ref={canvasRef} className="hidden-canvas" />
                 </section>

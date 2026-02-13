@@ -174,6 +174,10 @@ public sealed class RelayReceiverService(ILogger<RelayReceiverService> logger) :
                 var frameNumber = Interlocked.Increment(ref _frameNumber);
                 var frameData = new FrameData(jpegData, DateTime.UtcNow, frameNumber);
 
+                // 診断ログ（初回 + 100フレームごと）
+                if (frameNumber == 1 || frameNumber % 100 == 0)
+                    logger.LogInformation("フレーム受信: #{FrameNumber} ({Size} bytes)", frameNumber, payloadSize);
+
                 Volatile.Write(ref _latestFrame, jpegData);
                 FrameAvailable?.Invoke(this, new FrameEventArgs(frameData));
             }
