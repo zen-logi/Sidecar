@@ -9,7 +9,9 @@
     "build:electron": "tsc -p tsconfig.main.json",
     "build": "npm run build:next && npm run build:electron",
     "start": "npm run build && electron .",
-    "dev:electron": "npm run build:electron && concurrently --kill-others \"npm run dev\" \"sleep 3 && electron .\""
+    "dev:electron": "npm run build:electron && concurrently --kill-others \"npm run dev\" \"sleep 3 && electron .\"",
+    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac"
   },
   "dependencies": {
     "next": "^15.0.0",
@@ -22,6 +24,33 @@
     "@types/react-dom": "^19.0.0",
     "concurrently": "^9.0.0",
     "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
     "typescript": "^5.7.0"
+  },
+  "build": {
+    "appId": "com.sidecar.multisender",
+    "productName": "Sidecar MultiSender",
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "resources"
+    },
+    "files": [
+      "dist/**/*",
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.png"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities",
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

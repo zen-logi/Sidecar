@@ -13,15 +13,38 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    runs-on: windows-latest
-    
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      VERSION: ${{ steps.version.outputs.VERSION }}
+      SHORT_SHA: ${{ steps.version.outputs.SHORT_SHA }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+      - name: Generate Version
+        id: version
+        shell: bash
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          DATE=$(date +'%Y.%m.%d')
+          VERSION="v$DATE.$COMMIT_COUNT"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "Generated Version: $VERSION"
+
+  build-windows:
+    needs: setup
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.setup.outputs.VERSION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- .NET Build Setup ---
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -29,29 +52,14 @@ jobs:
       
       - name: Install MAUI workloads
         run: dotnet workload install maui-windows android ios maccatalyst
-      
-      - name: Get version
-        id: version
-        shell: pwsh
-        run: |
-          $commitCount = git rev-list --count HEAD
-          $shortSha = git rev-parse --short HEAD
-          $date = Get-Date -Format "yyyy.MM.dd"
-          $version = "v$date.$commitCount"
-          
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          echo "SHORT_SHA=$shortSha" >> $env:GITHUB_OUTPUT
-          Write-Host "Version: $version"
-      
-      - name: Restore Shared
-        run: dotnet restore src/Sidecar.Shared/Sidecar.Shared.csproj
-      
-      - name: Restore Host
-        run: dotnet restore src/Sidecar.Host/Sidecar.Host.csproj
-      
+
       - name: Install Inno Setup
         run: choco install innosetup -y
-      
+
+      # --- Build Host ---
+      - name: Restore Host
+        run: dotnet restore src/Sidecar.Host/Sidecar.Host.csproj
+
       - name: Build Host
         run: |
           dotnet publish src/Sidecar.Host/Sidecar.Host.csproj `
@@ -61,7 +69,21 @@ jobs:
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -o ./publish/host
-      
+
+      - name: Archive Host
+        shell: pwsh
+        run: Compress-Archive -Path ./publish/host/* -DestinationPath ./Sidecar.Host-win-x64.zip
+
+      - name: Upload Host Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-win
+          path: Sidecar.Host-win-x64.zip
+
+      # --- Build Client ---
+      - name: Restore Client
+        run: dotnet restore src/Sidecar.Client/Sidecar.Client.csproj
+
       - name: Build Client
         run: |
           dotnet publish src/Sidecar.Client/Sidecar.Client.csproj `
@@ -69,70 +91,120 @@ jobs:
             -f net10.0-windows10.0.19041.0 `
             -p:WindowsPackageType=None `
             -o ./publish/client
-      
-      - name: Create Host Archive
-        shell: pwsh
-        run: |
-          Compress-Archive -Path ./publish/host/* -DestinationPath ./Sidecar.Host-win-x64.zip
-      
+
       - name: Build Client Installer
         shell: pwsh
         run: |
-          # Update version in setup.iss
-          $version = "${{ steps.version.outputs.VERSION }}".TrimStart('v')
-          (Get-Content setup.iss) -replace '#define MyAppVersion "1.0.0"', "#define MyAppVersion `"$version`"" | Set-Content setup.iss
-          
-          # Create installer directory
+          $ver = "${{ env.VERSION }}".TrimStart('v')
+          (Get-Content setup.iss) -replace '#define MyAppVersion "1.0.0"', "#define MyAppVersion `"$ver`"" | Set-Content setup.iss
           New-Item -ItemType Directory -Force -Path installer
-          
-          # Build installer
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" setup.iss
-      
-      - name: Check if tag exists
-        id: check_tag
+
+      - name: Upload Client Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-win
+          path: installer/Sidecar.Client-Setup.exe
+
+      # --- Build Electron (Windows) ---
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Prepare Electron Resources
         shell: pwsh
         run: |
-          $tagExists = git tag -l "${{ steps.version.outputs.VERSION }}"
-          if ($tagExists) {
-            echo "TAG_EXISTS=true" >> $env:GITHUB_OUTPUT
-          } else {
-            echo "TAG_EXISTS=false" >> $env:GITHUB_OUTPUT
-          }
-      
+          New-Item -ItemType Directory -Force -Path src/Sidecar.MultiSender/resources
+          Copy-Item src/Sidecar.Client/Resources/AppIcon/appicon.png src/Sidecar.MultiSender/resources/icon.png
+
+      - name: Build Electron (Windows)
+        working-directory: src/Sidecar.MultiSender
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build:win
+
+      - name: Upload Electron Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-win
+          path: src/Sidecar.MultiSender/dist-electron/*.exe
+
+  build-mac:
+    needs: setup
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.setup.outputs.VERSION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Prepare Electron Resources
+        run: |
+          mkdir -p src/Sidecar.MultiSender/resources
+          cp src/Sidecar.Client/Resources/AppIcon/appicon.png src/Sidecar.MultiSender/resources/icon.png
+
+      - name: Build Electron (Mac)
+        working-directory: src/Sidecar.MultiSender
+        run: |
+          npm ci
+          npm run build:mac
+
+      - name: Upload Electron Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-mac
+          path: src/Sidecar.MultiSender/dist-electron/*.dmg
+
+  release:
+    needs: [setup, build-windows, build-mac]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display Downloaded Files
+        run: ls -R artifacts
+
       - name: Create Release
-        if: steps.check_tag.outputs.TAG_EXISTS == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.VERSION }}
-          name: Release ${{ steps.version.outputs.VERSION }}
+          tag_name: ${{ needs.setup.outputs.VERSION }}
+          name: Release ${{ needs.setup.outputs.VERSION }}
           body: |
-            ## Sidecar Release ${{ steps.version.outputs.VERSION }}
+            ## Sidecar Release ${{ needs.setup.outputs.VERSION }}
             
             ### 📦 Downloads
             
-            | ファイル | 説明 |
-            |----------|------|
-            | `Sidecar.Client-Setup.exe` | Client インストーラー（視聴側） |
-            | `Sidecar.Host-win-x64.zip` | Host 単体（配信側） |
+            | コンポーネント | ファイル | 説明 |
+            |--------------|----------|------|
+            | **Host** (配信) | `Sidecar.Host-win-x64.zip` | Windows用ホストアプリ (ZIP) |
+            | **Client** (視聴) | `Sidecar.Client-Setup.exe` | Windows用クライアント (インストーラー) |
+            | **Sender** (Mac) | `Sidecar MultiSender-*.dmg` | macOS用リレー送信アプリ |
+            | **Sender** (Win) | `Sidecar MultiSender Setup *.exe` | Windows用リレー送信アプリ |
             
             ### 📥 インストール方法
             
-            **Client（視聴側）**: `Sidecar.Client-Setup.exe` をダブルクリックで実行
-            
-            **Host（配信側）**: ZIPを解凍して `Sidecar.Host.exe` を実行
+            - **Host**: 解凍して `Sidecar.Host.exe` を実行
+            - **Client**: インストーラーを実行
+            - **Sender**: インストーラー/DMG を実行
             
             ### 🔧 Changes
             
-            Commit: ${{ steps.version.outputs.SHORT_SHA }}
-            
-            ---
-            
-            > 📱 **Android/iOS/macOS**: ソースからビルドしてください。
+            Commit: ${{ needs.setup.outputs.SHORT_SHA }}
           files: |
-            installer/Sidecar.Client-Setup.exe
-            Sidecar.Host-win-x64.zip
+            artifacts/host-win/*.zip
+            artifacts/client-win/*.exe
+            artifacts/electron-win/*.exe
+            artifacts/electron-mac/*.dmg
           draft: false
           prerelease: false
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
