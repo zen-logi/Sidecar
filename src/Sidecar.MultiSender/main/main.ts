@@ -2,6 +2,9 @@ import { app, BrowserWindow, ipcMain, desktopCapturer } from 'electron';
 import * as path from 'path';
 import { TcpSender } from './tcp-sender';
 
+/** 開発モード判定（app.isPackagedはパッケージ化されていない場合false） */
+const isDev = !app.isPackaged;
+
 /** メインウィンドウの参照 */
 let mainWindow: BrowserWindow | null = null;
 
@@ -27,10 +30,26 @@ function createWindow(): void {
     });
 
     // 開発時はNext.js dev serverに接続、本番時はビルド済みHTMLをロード
-    if (process.env.NODE_ENV === 'development') {
-        mainWindow.loadURL('http://localhost:3000');
+    if (isDev) {
+        // Next.js dev serverの起動を待ってからロード
+        const devUrl = 'http://localhost:3000';
+        const loadDevUrl = async (retries = 30): Promise<void> => {
+            try {
+                await mainWindow!.loadURL(devUrl);
+            } catch {
+                if (retries > 0) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await loadDevUrl(retries - 1);
+                } else {
+                    console.error('Next.js dev server に接続できません。先に npm run dev を実行してください。');
+                }
+            }
+        };
+        loadDevUrl();
     } else {
-        mainWindow.loadFile(path.join(__dirname, '..', 'out', 'index.html'));
+        // next build && next export で生成された静的ファイルを読み込む
+        const indexPath = path.join(app.getAppPath(), 'out', 'index.html');
+        mainWindow.loadFile(indexPath);
     }
 
     mainWindow.on('closed', () => {
