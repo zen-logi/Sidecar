@@ -4,3 +4,5 @@ dist/
 out/
 *.js.map
 *.d.ts.map
+dist-electron/
+next-env.d.ts
