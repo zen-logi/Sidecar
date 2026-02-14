@@ -147,4 +147,5 @@ secrets.json
 *.sln.iml
 
 # Agent workflows
-.agent/
+.agent/*
+!.agent/workflows/

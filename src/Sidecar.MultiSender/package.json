@@ -9,7 +9,7 @@
     "build:electron": "tsc -p tsconfig.main.json",
     "build": "npm run build:next && npm run build:electron",
     "start": "npm run build && electron .",
-    "dev:electron": "npm run build:electron && concurrently --kill-others \"npm run dev\" \"sleep 3 && electron .\"",
+    "dev:electron": "npm run build:electron && concurrently --kill-others \"npm run dev\" \"sleep 3 && electron . --dev\"",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac"
   },

@@ -1,0 +1,39 @@
+name: Build Check
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+
+jobs:
+  build-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          
+      - name: Install MAUI workloads
+        run: dotnet workload install maui-windows android ios maccatalyst
+
+      - name: Build Host
+        run: dotnet build src/Sidecar.Host/Sidecar.Host.csproj -c Release
+
+      - name: Build Client
+        run: dotnet build src/Sidecar.Client/Sidecar.Client.csproj -c Release -f net10.0-windows10.0.19041.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build MultiSender
+        working-directory: src/Sidecar.MultiSender
+        run: |
+          npm ci
+          npm run build

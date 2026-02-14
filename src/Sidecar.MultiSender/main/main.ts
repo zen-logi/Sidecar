@@ -3,7 +3,7 @@ import * as path from 'path';
 import { TcpSender } from './tcp-sender';
 
 /** 開発モード判定（app.isPackagedはパッケージ化されていない場合false） */
-const isDev = !app.isPackaged;
+const isDev = !app.isPackaged && process.argv.includes('--dev');
 
 /** メインウィンドウの参照 */
 let mainWindow: BrowserWindow | null = null;
