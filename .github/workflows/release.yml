@@ -16,7 +16,8 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     outputs:
-      VERSION: ${{ steps.version.outputs.VERSION }}
+      RELEASE_TAG: ${{ steps.version.outputs.RELEASE_TAG }}
+      BUILD_VERSION: ${{ steps.version.outputs.BUILD_VERSION }}
       SHORT_SHA: ${{ steps.version.outputs.SHORT_SHA }}
     steps:
       - name: Checkout
@@ -30,16 +31,19 @@ jobs:
           COMMIT_COUNT=$(git rev-list --count HEAD)
           SHORT_SHA=$(git rev-parse --short HEAD)
           DATE=$(date +'%Y.%m.%d')
-          VERSION="v$DATE.$COMMIT_COUNT"
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          BUILD_VERSION="$DATE.$COMMIT_COUNT"
+          RELEASE_TAG="v$BUILD_VERSION"
+          echo "BUILD_VERSION=$BUILD_VERSION" >> $GITHUB_OUTPUT
+          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "Generated Version: $VERSION"
+          echo "Generated Version: $RELEASE_TAG (Build: $BUILD_VERSION)"
 
   build-windows:
     needs: setup
     runs-on: windows-latest
     env:
-      VERSION: ${{ needs.setup.outputs.VERSION }}
+      RELEASE_TAG: ${{ needs.setup.outputs.RELEASE_TAG }}
+      BUILD_VERSION: ${{ needs.setup.outputs.BUILD_VERSION }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -95,7 +99,7 @@ jobs:
       - name: Build Client Installer
         shell: pwsh
         run: |
-          $ver = "${{ env.VERSION }}".TrimStart('v')
+          $ver = "${{ env.BUILD_VERSION }}"
           (Get-Content setup.iss) -replace '#define MyAppVersion "1.0.0"', "#define MyAppVersion `"$ver`"" | Set-Content setup.iss
           New-Item -ItemType Directory -Force -Path installer
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" setup.iss
@@ -135,7 +139,7 @@ jobs:
     needs: setup
     runs-on: macos-latest
     env:
-      VERSION: ${{ needs.setup.outputs.VERSION }}
+      RELEASE_TAG: ${{ needs.setup.outputs.RELEASE_TAG }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -177,10 +181,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.setup.outputs.VERSION }}
-          name: Release ${{ needs.setup.outputs.VERSION }}
+          tag_name: ${{ needs.setup.outputs.RELEASE_TAG }}
+          name: Release ${{ needs.setup.outputs.RELEASE_TAG }}
           body: |
-            ## Sidecar Release ${{ needs.setup.outputs.VERSION }}
+            ## Sidecar Release ${{ needs.setup.outputs.RELEASE_TAG }}
             
             ### 📦 Downloads
             
